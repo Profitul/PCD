@@ -1,0 +1,82 @@
+[2026-04-08 16:38:32] [INFO] Server started user_port=9090 admin_port=9091
+[2026-04-08 16:39:02] [INFO] Accepted connection fd=6 type=user ip=127.0.0.1
+[2026-04-08 16:39:02] [INFO] Received PING from fd=6
+[2026-04-08 16:39:02] [INFO] Client disconnected fd=6 ip=127.0.0.1
+[2026-04-08 16:39:18] [INFO] Accepted connection fd=6 type=admin ip=127.0.0.1
+[2026-04-08 16:39:18] [INFO] Received PING from fd=6
+[2026-04-08 16:39:18] [INFO] Client disconnected fd=6 ip=127.0.0.1
+[2026-04-08 17:03:25] [INFO] Worker 0 started
+[2026-04-08 17:03:25] [INFO] Worker 1 started
+[2026-04-08 17:03:25] [INFO] Worker 2 started
+[2026-04-08 17:03:25] [INFO] Server started user_port=9090 admin_port=9091 workers=3
+[2026-04-08 17:03:42] [INFO] Accepted connection fd=8 type=user ip=127.0.0.1
+[2026-04-14 18:34:49] [INFO] Worker 0 started
+[2026-04-14 18:34:49] [INFO] Server started user_port=9090 admin_port=9091 workers=3
+[2026-04-14 18:34:49] [INFO] Worker 2 started
+[2026-04-14 18:34:49] [INFO] Worker 1 started
+[2026-04-14 18:35:06] [INFO] Accepted connection fd=8 type=user ip=127.0.0.1
+[2026-04-14 18:35:06] [INFO] Submitted job_id=1 type=TEXT from fd=8 payload="salut din clientul c" path=""
+[2026-04-14 18:35:06] [INFO] Worker 0 picked TEXT job_id=1 payload="salut din clientul c"
+[2026-04-14 18:35:07] [INFO] Worker 0 finished TEXT job_id=1
+[2026-04-14 18:35:07] [INFO] Main thread received event job_id=1 state=DONE
+[2026-04-14 18:35:08] [INFO] Client disconnected fd=8 ip=127.0.0.1
+[2026-04-14 18:36:59] [INFO] Accepted connection fd=8 type=user ip=127.0.0.1
+[2026-04-14 18:36:59] [INFO] Submitted job_id=2 type=VALIDATE_IMAGE from fd=8 payload="" path="C:UserssutagDesktop"
+[2026-04-14 18:36:59] [INFO] Worker 2 picked VALIDATE_IMAGE job_id=2 path="C:UserssutagDesktop"
+[2026-04-14 18:36:59] [INFO] Main thread received event job_id=2 state=FAILED
+[2026-04-14 18:37:00] [INFO] Client disconnected fd=8 ip=127.0.0.1
+[2026-04-14 18:38:32] [INFO] Accepted connection fd=8 type=user ip=127.0.0.1
+[2026-04-14 18:38:32] [INFO] Submitted job_id=3 type=VALIDATE_IMAGE from fd=8 payload="" path="C:UserssutagDesktop"
+[2026-04-14 18:38:32] [INFO] Worker 1 picked VALIDATE_IMAGE job_id=3 path="C:UserssutagDesktop"
+[2026-04-14 18:38:32] [INFO] Main thread received event job_id=3 state=FAILED
+[2026-04-14 18:38:33] [INFO] Client disconnected fd=8 ip=127.0.0.1
+[2026-04-14 18:41:06] [INFO] Accepted connection fd=8 type=user ip=127.0.0.1
+[2026-04-14 18:41:06] [INFO] Submitted job_id=4 type=VALIDATE_IMAGE from fd=8 payload="" path="/root/stegapng-server/poza//IMG_0003.png"
+[2026-04-14 18:41:06] [INFO] Worker 0 picked VALIDATE_IMAGE job_id=4 path="/root/stegapng-server/poza//IMG_0003.png"
+[2026-04-14 18:41:06] [INFO] Main thread received event job_id=4 state=DONE
+[2026-04-14 18:41:07] [INFO] Client disconnected fd=8 ip=127.0.0.1
+[2026-04-14 18:41:56] [INFO] Accepted connection fd=8 type=user ip=127.0.0.1
+[2026-04-14 18:41:56] [INFO] Submitted job_id=5 type=ANALYZE_CAPACITY from fd=8 payload="" path="/root/stegapng-server/poza//IMG_0003.png"
+[2026-04-14 18:41:56] [INFO] Worker 2 picked ANALYZE_CAPACITY job_id=5 path="/root/stegapng-server/poza//IMG_0003.png"
+[2026-04-14 18:41:56] [INFO] Main thread received event job_id=5 state=DONE
+[2026-04-14 18:41:57] [INFO] Client disconnected fd=8 ip=127.0.0.1
+[2026-04-18 16:44:47] [INFO] Server started user_port=9090 admin_port=9091 workers=3
+[2026-04-18 16:44:47] [INFO] Worker 0 started
+[2026-04-18 16:44:47] [INFO] Worker 2 started
+[2026-04-18 16:44:47] [INFO] Worker 1 started
+[2026-04-18 16:45:16] [INFO] Server started user_port=9090 admin_port=9091 workers=3
+[2026-04-18 16:45:16] [INFO] Worker 0 started
+[2026-04-18 16:45:16] [INFO] Worker 2 started
+[2026-04-18 16:45:16] [INFO] Worker 1 started
+[2026-04-18 16:45:27] [INFO] Server started user_port=9090 admin_port=9091 workers=3
+[2026-04-18 16:45:27] [INFO] Worker 0 started
+[2026-04-18 16:45:27] [INFO] Worker 1 started
+[2026-04-18 16:45:27] [INFO] Worker 2 started
+[2026-04-18 16:45:52] [INFO] Worker 0 started
+[2026-04-18 16:45:52] [INFO] Server started user_port=9090 admin_port=9091 workers=3
+[2026-04-18 16:45:52] [INFO] Worker 1 started
+[2026-04-18 16:45:52] [INFO] Worker 2 started
+[2026-04-18 16:45:54] [INFO] Accepted fd=8 type=user ip=127.0.0.1
+[2026-04-18 16:45:56] [INFO] Submitted job_id=1 type=ENCODE_TEXT from fd=8 ip=127.0.0.1
+[2026-04-18 16:45:56] [INFO] Worker 0 ENCODE_TEXT job_id=1 png=storage/uploads/job_1.png text=storage/uploads/job_1.txt
+[2026-04-18 16:46:02] [INFO] Event job_id=1 state=DONE
+[2026-04-18 16:46:04] [INFO] Client disconnected fd=8 ip=127.0.0.1
+[2026-04-18 16:46:04] [INFO] Accepted fd=8 type=user ip=127.0.0.1
+[2026-04-18 16:46:06] [INFO] Submitted job_id=2 type=DECODE from fd=8 ip=127.0.0.1
+[2026-04-18 16:46:06] [INFO] Worker 1 DECODE job_id=2 png=storage/uploads/job_2.png
+[2026-04-18 16:46:06] [INFO] Event job_id=2 state=DONE
+[2026-04-18 16:46:06] [INFO] Client disconnected fd=8 ip=127.0.0.1
+[2026-04-18 16:47:23] [INFO] Worker 0 started
+[2026-04-18 16:47:23] [INFO] Server started user_port=9090 admin_port=9091 workers=3
+[2026-04-18 16:47:23] [INFO] Worker 1 started
+[2026-04-18 16:47:23] [INFO] Worker 2 started
+[2026-04-18 16:47:25] [INFO] Accepted fd=8 type=user ip=127.0.0.1
+[2026-04-18 16:47:27] [INFO] Submitted job_id=1 type=ENCODE_FILE from fd=8 ip=127.0.0.1
+[2026-04-18 16:47:27] [INFO] Worker 0 ENCODE_FILE job_id=1 png=storage/uploads/job_1.png file=storage/uploads/job_1.data name=secret_payload.bin
+[2026-04-18 16:47:32] [INFO] Event job_id=1 state=DONE
+[2026-04-18 16:47:34] [INFO] Client disconnected fd=8 ip=127.0.0.1
+[2026-04-18 16:47:34] [INFO] Accepted fd=8 type=user ip=127.0.0.1
+[2026-04-18 16:47:35] [INFO] Submitted job_id=2 type=DECODE from fd=8 ip=127.0.0.1
+[2026-04-18 16:47:35] [INFO] Worker 1 DECODE job_id=2 png=storage/uploads/job_2.png
+[2026-04-18 16:47:36] [INFO] Event job_id=2 state=DONE
+[2026-04-18 16:47:36] [INFO] Client disconnected fd=8 ip=127.0.0.1
