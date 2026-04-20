@@ -50,10 +50,10 @@ bash scripts/demo_admin.sh
 ## Impartire pe 4 membri (propunere)
 | Membru | Responsabilitati principale | Fisiere |
 |-------:|-----------------------------|---------|
-| 1 | Server core + networking + protocol | `src/server/server.c`, `net.c`, `protocol.c`, `include/server.h`, `protocol.h`, `net.h` |
-| 2 | Coada, workeri, job table, logger | `src/server/queue.c`, `worker.c`, `job.c`, `logger.c`, `include/job.h`, `logger.h` |
-| 3 | Modul stego + integrare libpng + storage | `src/server/stego.c`, `png_utils.c`, `storage.c`, `include/stego.h`, `storage.h`, `tests/stego_test.c` |
-| 4 | Clientii (C, Python), admin client, scripturi demo, documentatie | `src/client/main.c`, `src/admin/main.c`, `python_client/`, `scripts/`, `docs/` |
+| Tamasila Vlad | Server core + networking + protocol | `src/server/server.c`, `net.c`, `protocol.c`, `include/server.h`, `protocol.h`, `net.h` |
+| Tarniceriu Luca | Coada, workeri, job table, logger | `src/server/queue.c`, `worker.c`, `job.c`, `logger.c`, `include/job.h`, `logger.h` |
+| Suta Georgian | Modul stego + integrare libpng + storage | `src/server/stego.c`, `png_utils.c`, `storage.c`, `include/stego.h`, `storage.h`, `tests/stego_test.c` |
+| Albu Matei | Clientii (C, Python), admin client, scripturi demo, documentatie | `src/client/main.c`, `src/admin/main.c`, `python_client/`, `scripts/`, `docs/` |
 
 Toti 4 colaboreaza pe: Makefile, `include/common.h` si `config.h`, SRS/SDD, prezentare.
 
