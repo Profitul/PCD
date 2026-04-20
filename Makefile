@@ -32,7 +32,10 @@ CLIENT_BIN = client
 ADMIN_BIN = admin_client
 STEGO_TEST_BIN = stego_test
 
-.PHONY: all clean run-server run-client run-admin test
+ANALYZE_SRCS = $(SERVER_SRCS) src/client/main.c src/admin/main.c tests/stego_test.c
+ANALYZE_FLAGS = -fanalyzer -Wall -Wextra -Wpedantic -std=c11 -D_POSIX_C_SOURCE=200809L -pthread -Iinclude
+
+.PHONY: all clean run-server run-client run-admin test analyze
 
 all: $(SERVER_BIN) $(CLIENT_BIN) $(ADMIN_BIN)
 
@@ -50,7 +53,6 @@ $(STEGO_TEST_BIN): $(STEGO_TEST_SRCS)
 
 test: $(STEGO_TEST_BIN)
 	./$(STEGO_TEST_BIN)
-
 run-server: $(SERVER_BIN)
 	./$(SERVER_BIN)
 
@@ -59,6 +61,12 @@ run-client: $(CLIENT_BIN)
 
 run-admin: $(ADMIN_BIN)
 	./$(ADMIN_BIN)
+
+analyze:
+	@rc=0; for f in $(ANALYZE_SRCS); do \
+		echo "== analyze $$f =="; \
+		$(CC) -c $(ANALYZE_FLAGS) $$f -o /tmp/_analyze.o || rc=1; \
+	done; rm -f /tmp/_analyze.o; exit $$rc
 
 clean:
 	rm -f $(SERVER_BIN) $(CLIENT_BIN) $(ADMIN_BIN) $(STEGO_TEST_BIN)
