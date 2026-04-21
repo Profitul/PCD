@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>SRS</title>
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    span.underline{text-decoration: underline;}
+    div.column{display: inline-block; vertical-align: top; width: 50%;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    ul.task-list{list-style: none;}
+  </style>
+</head>
+<body>
+<h1 id="srs---software-requirements-specification">SRS - Software Requirements Specification</h1>
+<h1 id="stegapng---server-de-steganografie-pe-imagini-png">StegaPNG - Server de steganografie pe imagini PNG</h1>
+<p>Versiune: 1.0 Data: aprilie 2026 Materia: Programarea Calculatoarelor si Distribuite (PCD), UVT Echipa: 4 membri</p>
+<hr />
+<h2 id="introducere">1. Introducere</h2>
+<h3 id="scop">1.1 Scop</h3>
+<p>Acest document defineste cerintele functionale si nefunctionale pentru sistemul client-server <strong>StegaPNG</strong>, destinat ascunderii si extragerii de informatii (text sau fisiere) in imagini PNG folosind tehnica LSB (Least Significant Bit), prin intermediul bibliotecii <code>libpng</code>.</p>
+<h3 id="domeniu">1.2 Domeniu</h3>
+<p>Aplicatia permite mai multor clienti sa trimita imagini PNG catre un server centralizat pentru operatii de steganografie. Serverul proceseaza cererile in paralel folosind un thread pool, raporteaza status-ul job-urilor si returneaza rezultatele. Un client administrativ dedicat ofera rapoarte si actiuni de control.</p>
+<h3 id="definitii-si-acronime">1.3 Definitii si acronime</h3>
+<ul>
+<li><strong>LSB</strong> - Least Significant Bit</li>
+<li><strong>PNG</strong> - Portable Network Graphics</li>
+<li><strong>FIFO</strong> - First-In-First-Out</li>
+<li><strong>RGBA</strong> - Red, Green, Blue, Alpha</li>
+<li><strong>CRC32</strong> - Cyclic Redundancy Check pe 32 de biti</li>
+<li><strong>TCP</strong> - Transmission Control Protocol</li>
+<li><strong>JOB</strong> - unitate de lucru identificata printr-un ID unic, executata de worker</li>
+</ul>
+<h3 id="referinte">1.4 Referinte</h3>
+<ul>
+<li>Libpng documentation (http://www.libpng.org/pub/png/libpng.html)</li>
+<li>POSIX.1-2008 (IEEE Std 1003.1-2008)</li>
+<li>Cerinte PCD - Nivel A + B (fara Nivel C, fara REST)</li>
+</ul>
+<hr />
+<h2 id="descriere-generala">2. Descriere generala</h2>
+<h3 id="perspectiva-produsului">2.1 Perspectiva produsului</h3>
+<p>Sistem client-server cu server nativ C pe Linux, clienti ordinari in C si Python, client admin dedicat. Comunicare TCP pe doua porturi separate (user si admin). Procesare imagini folosind libpng pentru decodare/encodare PNG.</p>
+<h3 id="functii-principale">2.2 Functii principale</h3>
+<ol type="1">
+<li>Encode text intr-o imagine PNG.</li>
+<li>Decode text/fisier ascuns intr-o imagine PNG steganografica.</li>
+<li>Encode fisier binar arbitrar intr-o imagine PNG.</li>
+<li>Analiza capacitate (cat payload incape intr-o imagine).</li>
+<li>Validare imagine PNG.</li>
+<li>Administrare: rapoarte, cancel job, kick client, block/unblock IP.</li>
+</ol>
+<h3 id="caracteristicile-utilizatorilor">2.3 Caracteristicile utilizatorilor</h3>
+<ul>
+<li><strong>User</strong> - trimite imagini si payload, primeste rezultat. Nu necesita autentificare in versiunea de baza. Conexiuni simultane multiple.</li>
+<li><strong>Admin</strong> - conectat local, o singura instanta admin la un moment dat, executa comenzi de control si diagnostic.</li>
+</ul>
+<h3 id="constrangeri">2.4 Constrangeri</h3>
+<ul>
+<li>Server obligatoriu in C pe UNIX/Linux.</li>
+<li>Folosire <code>libpng</code> pentru orice operatie PNG.</li>
+<li>Folosire <code>poll()</code> pentru I/O multiplex.</li>
+<li>Concurenta cu <code>pthread</code> (mutex + condition variable) si pipe anonim.</li>
+<li>Coding style strict: <code>-Wall -Wextra -Wpedantic -Werror -std=c11</code>.</li>
+<li>Imagini PNG 8-bit (RGB sau RGBA). Alte formate respinse.</li>
+<li>Dimensiune maxima transfer: 64 MB per fisier.</li>
+</ul>
+<h3 id="presupuneri-si-dependente">2.5 Presupuneri si dependente</h3>
+<ul>
+<li>Clientul si serverul ruleaza pe retea de incredere (localhost in demo).</li>
+<li>Admin-ul ruleaza pe aceeasi masina cu serverul.</li>
+<li>Sistem Linux (dezvoltat/testat Ubuntu 22.04).</li>
+</ul>
+<hr />
+<h2 id="cerinte-functionale">3. Cerinte functionale</h2>
+<h3 id="server">3.1 Server</h3>
+<ul>
+<li><strong>RF-01</strong> Serverul deschide doua porturi TCP: unul pentru useri (SERVER_PORT) si unul pentru admin (ADMIN_PORT).</li>
+<li><strong>RF-02</strong> Serverul foloseste <code>poll()</code> pentru multiplex I/O pe toti descriptorii.</li>
+<li><strong>RF-03</strong> Serverul accepta maxim MAX_CLIENTS conexiuni user simultane.</li>
+<li><strong>RF-04</strong> Serverul accepta maxim un singur admin la un moment dat.</li>
+<li><strong>RF-05</strong> Toate cererile de procesare (user) intra intr-o coada FIFO protejata de mutex + condition variable.</li>
+<li><strong>RF-06</strong> Thread-uri worker consuma coada si proceseaza job-urile.</li>
+<li><strong>RF-07</strong> Fiecare job primeste un ID unic incremental si un state (QUEUED/RUNNING/DONE/FAILED/CANCELED).</li>
+<li><strong>RF-08</strong> Serverul suporta reincarcarea PNG-ului de intrare si scrierea PNG-ului de iesire folosind libpng.</li>
+<li><strong>RF-09</strong> Serverul logheaza evenimentele in <code>logs/server.log</code> cu timestamp si nivel (INFO/WARN/ERROR).</li>
+<li><strong>RF-10</strong> Serverul refuza conexiunile de pe IP-urile din blocklist.</li>
+<li><strong>RF-11</strong> Serverul suporta shutdown controlat la semnalele SIGINT/SIGTERM.</li>
+</ul>
+<h3 id="comenzi-user">3.2 Comenzi user</h3>
+<ul>
+<li><strong>RF-20</strong> <code>PING</code> - raspuns <code>PONG</code>.</li>
+<li><strong>RF-21</strong> <code>HELP</code> - lista comenzilor.</li>
+<li><strong>RF-22</strong> <code>CAPACITY &lt;png_size&gt;</code> + binar PNG - raspunde cu capacitatea.</li>
+<li><strong>RF-23</strong> <code>VALIDATE &lt;png_size&gt;</code> + binar PNG - raspunde daca este PNG valid.</li>
+<li><strong>RF-24</strong> <code>ENCODE_TEXT &lt;png_size&gt; &lt;text_size&gt;</code> + PNG + text - creeaza job.</li>
+<li><strong>RF-25</strong> <code>ENCODE_FILE &lt;png_size&gt; &lt;name_size&gt; &lt;file_size&gt;</code> + PNG + name + fisier - creeaza job.</li>
+<li><strong>RF-26</strong> <code>DECODE &lt;png_size&gt;</code> + PNG - creeaza job de decodare.</li>
+<li><strong>RF-27</strong> <code>STATUS &lt;job_id&gt;</code> - raporteaza starea unui job.</li>
+<li><strong>RF-28</strong> <code>META &lt;job_id&gt;</code> - raporteaza tipul si dimensiunea rezultatului.</li>
+<li><strong>RF-29</strong> <code>DOWNLOAD &lt;job_id&gt;</code> - livreaza <code>DATA &lt;size&gt;</code> + bytes.</li>
+<li><strong>RF-30</strong> <code>RESULT &lt;job_id&gt;</code> - livreaza un rezumat scurt al rezultatului.</li>
+<li><strong>RF-31</strong> <code>QUIT</code> - deconectare eleganta.</li>
+</ul>
+<h3 id="comenzi-admin">3.3 Comenzi admin</h3>
+<ul>
+<li><strong>RF-40</strong> <code>STATS</code> - totaluri job-uri + durata medie + nr. clienti.</li>
+<li><strong>RF-41</strong> <code>LISTJOBS</code> - job-urile in curs.</li>
+<li><strong>RF-42</strong> <code>HISTORY</code> - ultimele N job-uri finalizate.</li>
+<li><strong>RF-43</strong> <code>LISTCLIENTS</code> - lista conexiunilor active (fd/tip/ip).</li>
+<li><strong>RF-44</strong> <code>AVGDURATION</code> - durata medie a job-urilor terminate.</li>
+<li><strong>RF-45</strong> <code>CANCEL &lt;job_id&gt;</code> - marcheaza un job pentru anulare.</li>
+<li><strong>RF-46</strong> <code>KICK &lt;fd&gt;</code> - inchide fortat un client user.</li>
+<li><strong>RF-47</strong> <code>BLOCKIP &lt;ip&gt;</code> - adauga IP in blocklist + kick conexiuni active.</li>
+<li><strong>RF-48</strong> <code>UNBLOCKIP &lt;ip&gt;</code> - scoate IP din blocklist.</li>
+</ul>
+<h3 id="modul-stego">3.4 Modul stego</h3>
+<ul>
+<li><strong>RF-60</strong> Incapsulare payload: magic <code>STG1</code> + type (1B) + name_len (2B BE) + name + payload_len (4B BE) + payload + CRC32 (4B BE).</li>
+<li><strong>RF-61</strong> Folosire numai a canalelor R/G/B (alpha pastrat intact pentru RGBA).</li>
+<li><strong>RF-62</strong> Detectare erori CRC la decodare.</li>
+<li><strong>RF-63</strong> Capacitate maxima = (W * H * data_channels) / 8 bytes.</li>
+<li><strong>RF-64</strong> Imagini acceptate: PNG 8-bit, RGB sau RGBA.</li>
+</ul>
+<hr />
+<h2 id="cerinte-nefunctionale">4. Cerinte nefunctionale</h2>
+<h3 id="performanta">4.1 Performanta</h3>
+<ul>
+<li><strong>RNF-01</strong> Timp de procesare &lt; 2s pentru imagini tipice (sub 8 MP).</li>
+<li><strong>RNF-02</strong> Suport transfer fisiere pana la 64 MB per cerere.</li>
+<li><strong>RNF-03</strong> Chunk de transfer 64 KB pentru a evita memorie excesiva.</li>
+</ul>
+<h3 id="robustete">4.2 Robustete</h3>
+<ul>
+<li><strong>RNF-10</strong> Validare stricta a tuturor marimilor primite de la client.</li>
+<li><strong>RNF-11</strong> Timeout implicit pe conexiuni inactive (via <code>poll</code>).</li>
+<li><strong>RNF-12</strong> Protejare impotriva race-conditions prin <code>pthread_mutex_t</code>.</li>
+<li><strong>RNF-13</strong> Ignorare SIGPIPE; gestionare eroare pe fiecare <code>write</code>.</li>
+</ul>
+<h3 id="calitatea-codului">4.3 Calitatea codului</h3>
+<ul>
+<li><strong>RNF-20</strong> Compilare fara warning cu flag-uri stricte.</li>
+<li><strong>RNF-21</strong> Separare clara pe module: server, net, logger, job, queue, worker, storage, stego, protocol.</li>
+<li><strong>RNF-22</strong> Functii &lt;= 80 linii unde este realizabil.</li>
+<li><strong>RNF-23</strong> Cod fara functii nesigure (evitare <code>gets</code>, <code>strcpy</code> neverificat, <code>sprintf</code> fara <code>n</code>).</li>
+</ul>
+<h3 id="portabilitate">4.4 Portabilitate</h3>
+<ul>
+<li><strong>RNF-30</strong> POSIX.1-2008, Linux x86_64.</li>
+<li><strong>RNF-31</strong> Dependente: <code>libpng</code>, <code>pthread</code>, <code>libc</code>. Fara frameworks externe.</li>
+</ul>
+<hr />
+<h2 id="cerinte-de-interfata">5. Cerinte de interfata</h2>
+<h3 id="interfete-de-retea">5.1 Interfete de retea</h3>
+<ul>
+<li>TCP/IPv4, default <code>127.0.0.1:9090</code> (user) si <code>127.0.0.1:9091</code> (admin).</li>
+<li>Protocol hibrid text+binar: comenzi pe linii UTF-8, urmate de sectiuni binare de lungime declarata.</li>
+</ul>
+<h3 id="interfete-de-stocare">5.2 Interfete de stocare</h3>
+<ul>
+<li><code>storage/uploads/</code> - PNG-uri primite de la client.</li>
+<li><code>storage/results/</code> - fisiere rezultate, denumite <code>job_&lt;id&gt;.{png,txt,bin}</code>.</li>
+<li><code>storage/temp/</code> - scratchpad intermediar.</li>
+<li><code>logs/server.log</code> - log-ul serverului.</li>
+</ul>
+<hr />
+<h2 id="nivele-acoperite">6. Nivele acoperite</h2>
+<ul>
+<li><strong>Nivel A</strong>: poll + thread pool + transfer fisiere mari + coada FIFO comuna + logging + 2 tipuri de clienti + admin separat.</li>
+<li><strong>Nivel B</strong>: ID unic pe job + STATUS asincron + pipe anonim (worker-&gt;main) + cancel + kick + blocklist IP.</li>
+<li><strong>Nivel C</strong>: nu este urmarit.</li>
+<li>Componenta REST: nu este inclusa.</li>
+</ul>
+</body>
+</html>

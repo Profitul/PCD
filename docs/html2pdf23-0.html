@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Q_AND_A</title>
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    span.underline{text-decoration: underline;}
+    div.column{display: inline-block; vertical-align: top; width: 50%;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    ul.task-list{list-style: none;}
+  </style>
+</head>
+<body>
+<h1 id="qa-pregatire-prezentare-milestone-1---stegapng">Q&amp;A Pregatire prezentare Milestone 1 - StegaPNG</h1>
+<p>Intrebari probabile + raspunsuri tehnice ancorate pe proiect. Intrebarile reprezinta ~60% din nota, asa ca partea asta e critica.</p>
+<h2 id="poll-vs-select-vs-epoll">1. poll() vs select() vs epoll()</h2>
+<ul>
+<li><strong>select</strong>: bitmask FD_SET, limita FD_SETSIZE=1024, O(n) scan, trebuie recreat la fiecare apel.</li>
+<li><strong>poll</strong>: array de <code>struct pollfd</code>, fara limita FD_SETSIZE, O(n), API mai curat.</li>
+<li><strong>epoll</strong> (Linux-specific): kernel-side ready list, O(1) pe eveniment, scalabil la zeci de mii de conexiuni.</li>
+<li><strong>Alegerea noastra: poll</strong>. Motiv: MAX_CLIENTS=128, poll e mai portabil decat epoll (spec cere POSIX), fara limitele select. Refacem vectorul in fiecare iteratie via <code>rebuild_pollfds()</code>.</li>
+</ul>
+<h2 id="pthread-mutex-vs-spinlock-vs-rwlock">2. pthread: mutex vs spinlock vs rwlock</h2>
+<ul>
+<li><strong>mutex</strong>: kernel sleep daca e locked, cost context switch; potrivit pentru sectiuni “lungi”.</li>
+<li><strong>spinlock</strong>: busy-wait, userspace; doar pentru sectiuni foarte scurte si contention mic.</li>
+<li><strong>rwlock</strong>: mai multi cititori SAU un singur scriitor; bun la read-heavy.</li>
+<li><strong>Noi folosim mutex</strong> pe <code>job_queue</code>, <code>job_table</code>, <code>blocklist</code>, <code>logger</code>. Sectiunile sunt suficient de “grele” (alocari, snprintf, I/O) ca mutex-ul sa fie alegerea corecta.</li>
+</ul>
+<h2 id="condition-variables">3. Condition variables</h2>
+<ul>
+<li><strong>De ce pthread_cond_wait cere mutex</strong>: atomic unlock+sleep, atomic re-lock la wakeup; fara mutex ar exista race intre “check conditie” si “sleep”.</li>
+<li><strong>Spurious wakeups</strong>: wait-ul trebuie intr-un <code>while(\!cond)</code>, nu <code>if(\!cond)</code>.</li>
+<li><strong>In queue.c</strong>: <code>job_queue_push</code> face <code>pthread_cond_signal</code>, <code>worker_main</code> face <code>while(empty) pthread_cond_wait(&amp;not_empty, &amp;mutex)</code>.</li>
+</ul>
+<h2 id="race-condition-deadlock-starvation">4. Race condition, deadlock, starvation</h2>
+<ul>
+<li><strong>Race</strong>: acces concurent la date fara sincronizare (ex: doi workeri pop dintr-o coada nepazita).</li>
+<li><strong>Deadlock</strong> (conditiile Coffman): mutual exclusion + hold-and-wait + no preemption + circular wait. Evitare: lock ordering, try-lock cu timeout, un singur mutex pe resursa.</li>
+<li><strong>Starvation</strong>: un thread nu obtine niciodata resursa. Evitare: FIFO/fair locks.</li>
+<li><strong>In proiect</strong>: folosim mereu <strong>acelasi ordering</strong> (lock queue -&gt; push -&gt; unlock), nu tinem doua mutex-uri simultan, folosim cond var pentru wake-up ordonat.</li>
+</ul>
+<h2 id="fork-vs-thread">5. fork() vs thread</h2>
+<ul>
+<li><strong>fork()</strong>: proces nou, spatiu de adrese separat (copy-on-write), fail-safe (crash-ul unui child nu omoara parintele), cost mai mare la pornire.</li>
+<li><strong>thread</strong>: shared memory, creare ieftina, crash intr-un thread = crash tot procesul.</li>
+<li><strong>Alegerea noastra</strong>: workeri pe <strong>thread</strong> (shared coada + job_table via mutex), dar <strong>fork()+exec()</strong> in admin pentru export log. Motivatie: workerii au nevoie de acces la structuri partajate; export-ul de log e izolat si foloseste binarul extern <code>tar</code>.</li>
+</ul>
+<h2 id="pipe-anonim-vs-named-pipe-fifo-vs-socketpair">6. Pipe anonim vs named pipe (FIFO) vs socketpair</h2>
+<ul>
+<li><strong>pipe anonim</strong> (<code>pipe()</code>): unidirectional, intre parent-child sau intre thread-uri.</li>
+<li><strong>named pipe</strong> (<code>mkfifo</code>): persistent in filesystem, intre procese fara relatie.</li>
+<li><strong>socketpair</strong>: bidirectional, mai flexibil.</li>
+<li><strong>Noi folosim pipe anonim</strong> ca notificare worker-&gt;main loop: workerul scrie <code>worker_event_t</code> in pipe cand termina un job, main loop-ul il citeste via poll()+nonblock read. Non-bloking pe read-end.</li>
+</ul>
+<h2 id="tcp-vs-udp">7. TCP vs UDP</h2>
+<ul>
+<li><strong>TCP</strong>: fiabil, ordonat, stream-based, 3-way handshake, flow control, congestion control.</li>
+<li><strong>UDP</strong>: datagram, fara garantii, fara conexiune.</li>
+<li><strong>Alegerea noastra: TCP</strong>. Motiv: transferam PNG-uri si fisiere mari (zeci de MB); avem nevoie de ordine + livrare garantata. UDP ar cere reimplementare ACK/reordering.</li>
+<li><strong>SO_REUSEADDR</strong>: il setam ca sa evitam TIME_WAIT blocarea portului la restart.</li>
+<li><strong>Nagle</strong>: nu dezactivam (TCP_NODELAY off), mesajele noastre nu sunt latency-critical.</li>
+</ul>
+<h2 id="lsb-steganografie">8. LSB steganografie</h2>
+<ul>
+<li><strong>Principiu</strong>: inlocuim bitul cel mai putin semnificativ al fiecarui byte de culoare (R/G/B) cu un bit din payload.</li>
+<li><strong>Capacitate</strong>: pentru imagine WxH RGB 8-bit: <code>3 * W * H / 8</code> bytes (~1/8 din dimensiunea pixelilor).</li>
+<li><strong>Limitari</strong>: fragil la recompresie JPEG (PNG ok pentru ca e lossless), detectabil statistic (chi-square, RS analysis) daca payload-ul nu e aleator.</li>
+<li><strong>Noi nu ascundem in canalul alpha</strong> pentru a nu afecta transparenta; skip-uim canalul A.</li>
+<li><strong>Format payload</strong>: magic 4 bytes (<code>STEG</code>) + version 1 byte + type 1 byte (text/file) + filename_len 2 bytes + filename + data_len 8 bytes + data + CRC32 4 bytes.</li>
+</ul>
+<h2 id="libpng">9. libpng</h2>
+<ul>
+<li><strong>De ce libpng</strong>: parsing/encoding PNG manual ar fi cateva mii de linii (deflate, CRC chunk, filtering per row). libpng e de-facto standard.</li>
+<li><strong>Flux</strong>: <code>png_create_read_struct</code> -&gt; <code>png_init_io</code> -&gt; <code>png_read_info</code> -&gt; <code>png_set_expand</code> (normalizeaza la RGB/RGBA 8-bit) -&gt; <code>png_read_image</code> pe row_pointers.</li>
+<li><strong>Riscuri</strong>: libpng foloseste <code>setjmp/longjmp</code> pentru erori; trebuie handler setat cu <code>png_set_longjmp_fn</code>.</li>
+</ul>
+<h2 id="signal-handling-in-multi-thread">10. Signal handling in multi-thread</h2>
+<ul>
+<li><strong>Problema</strong>: <code>signal()</code> este per-process, nu per-thread.</li>
+<li><strong>Solutie</strong>: blocam toate semnalele in workeri (<code>pthread_sigmask</code>), las main thread-ul sa gestioneze SIGINT/SIGTERM. Alternativ: <code>signalfd()</code> pentru integrare in poll().</li>
+<li><strong>Noi</strong>: <code>sigaction</code> pe SIGINT/SIGTERM in main, handler seteaza <code>volatile sig_atomic_t g_running = 0</code>. <code>SIGPIPE</code> il ignoram (altfel write-ul spre client deconectat ar omori procesul).</li>
+</ul>
+<h2 id="producer-consumer-pattern">11. Producer-consumer pattern</h2>
+<ul>
+<li>Coada thread-safe: <code>pthread_mutex_t</code> pentru mutual exclusion, <code>pthread_cond_t not_empty</code> pentru consumatori, optional <code>not_full</code> daca bounded.</li>
+<li><strong>In proiect</strong>: <code>job_queue_t</code> e FIFO; <code>job_queue_push</code> = producer (main loop), <code>job_queue_pop</code> = consumer (worker threads).</li>
+</ul>
+<h2 id="shutdown-controlat">12. Shutdown controlat</h2>
+<ul>
+<li><strong>Probleme daca ucizi brutal</strong>: file descriptor leaks, job-uri in zbor neterminate, log-uri netrimise, lock-uri ramase locked (daca e proces cloned).</li>
+<li><strong>Strategia noastra</strong>:
+<ol type="1">
+<li>Semnal -&gt; <code>g_running = 0</code></li>
+<li>Main loop iese din poll</li>
+<li><code>job_queue_stop()</code> seteaza flag + broadcast cond var</li>
+<li>Workerii detecteaza stop si ies</li>
+<li><code>pthread_join</code> pe toti workerii</li>
+<li>Inchid file descriptori (socketi, pipe)</li>
+<li>Distrug mutex-uri si cond vars</li>
+<li>Inchid logger-ul</li>
+</ol></li>
+</ul>
+<h2 id="stack-vs-heap">13. Stack vs heap</h2>
+<ul>
+<li><strong>Stack</strong>: alocare automata, rapid, limitat (~8MB tipic pe Linux), cleanup automat la iesire din functie.</li>
+<li><strong>Heap</strong>: <code>malloc/free</code>, mai mare, lifecycle manual, risc leak/use-after-free.</li>
+<li><strong>In proiect</strong>: <code>server_state_t clients[MAX_CLIENTS]</code> pe stack in <code>server_run()</code> (~10KB). Job-urile sunt pe heap (<code>job_table_create_job</code>) cu <code>free</code> in <code>job_table_destroy</code>.</li>
+</ul>
+<h2 id="crc32-si-integritate">14. CRC32 si integritate</h2>
+<ul>
+<li><strong>De ce CRC32</strong>: detecteaza corupere la citire/scriere, rapid, 32 biti sunt suficienti pentru payload mic.</li>
+<li><strong>Nu previne atacuri</strong> (nu e cryptographic hash); pentru asta am nevoie SHA-256+HMAC.</li>
+<li><strong>In proiect</strong>: calculez CRC32 peste header+data la encode, verific la decode. Daca CRC nu match -&gt; <code>STEGO_ERR_CRC</code>.</li>
+</ul>
+<h2 id="ce-face-libconfig-in-proiect">15. Ce face libconfig in proiect</h2>
+<ul>
+<li>Citeste <code>config/server.conf</code> (format libconfig) la startup.</li>
+<li>Precedenta: defaults compilate -&gt; libconfig -&gt; env (<code>STEGA_*</code>) -&gt; CLI (<code>--port</code>, <code>--workers</code>…).</li>
+<li>API: <code>config_init</code> -&gt; <code>config_read_file</code> -&gt; <code>config_lookup_int/string</code> -&gt; <code>config_destroy</code>.</li>
+<li>Fallback: daca libconfig lipseste, build-ul merge dar –config e disabled (avertisment).</li>
+</ul>
+<h2 id="getopt_long-env-vars-uname">16. getopt_long + env vars + uname</h2>
+<ul>
+<li><code>getopt_long</code>: parser standard GNU pentru <code>--long-option</code> + <code>-short</code>; gestioneaza automat argumente required/optional.</li>
+<li>Env via <code>getenv("STEGA_USER_PORT")</code> etc; parse cu <code>strtol</code>.</li>
+<li><code>uname(struct utsname *)</code> -&gt; sysname/nodename/release/machine -&gt; util la debug per masina.</li>
+<li>In log apare: <code>Env: sys=Linux node=... rel=... mach=x86_64</code> + <code>pid=X uid=Y user=Z</code>.</li>
+</ul>
+<h2 id="forkexecwait-concret">17. fork()+exec()+wait() concret</h2>
+<ul>
+<li><code>fork()</code> returneaza 0 in child, pid_child in parent, -1 eroare.</li>
+<li>In child: <code>execl("/bin/tar", "tar", "czf", ...)</code> inlocuieste imaginea procesului.</li>
+<li><code>_exit(127)</code> daca execl esueaza (nu <code>exit()</code> care face flush stdio buffers).</li>
+<li>Parent: <code>waitpid(pid, &amp;status, 0)</code> blocheaza pana termina child; <code>WIFEXITED(status)</code> + <code>WEXITSTATUS(status)</code> pentru rezultat.</li>
+<li>In proiect: admin client -&gt; meniu optiunea 13 “EXPORT LOG” -&gt; fork -&gt; execl tar -&gt; wait.</li>
+</ul>
+<h2 id="clang-tidy-si-analiza-statica">18. Clang-tidy si analiza statica</h2>
+<ul>
+<li>Folosim <code>gcc -fanalyzer</code> (echivalent simplificat): detecteaza use-after-free, double-free, null-deref, leak.</li>
+<li>Target <code>make analyze</code> compileaza fiecare fisier cu <code>-fanalyzer</code> + flag-urile stricte.</li>
+<li>Zero warnings pe tot codul.</li>
+</ul>
+<h2 id="coding-style-strict">19. Coding style strict</h2>
+<ul>
+<li><code>-Wall -Wextra -Wpedantic -Werror</code>: orice warning opreste build-ul.</li>
+<li><code>-std=c11</code> + <code>-D_POSIX_C_SOURCE=200809L</code>: standard C11 + API POSIX explicit.</li>
+<li><strong>Functii nesigure evitate</strong>: <code>gets()</code>, <code>strcpy()</code>, <code>strcat()</code>, <code>sprintf()</code> - inlocuite cu <code>fgets</code>, <code>snprintf</code>.</li>
+<li>Cast-uri explicite pentru conversii; <code>(void)</code> pe return values ignorate deliberat.</li>
+</ul>
+<h2 id="arhitectura-in-cifre">20. Arhitectura in cifre</h2>
+<ul>
+<li><strong>Limbaj</strong>: C11 (server + client + admin), Python 3 (client alternativ).</li>
+<li><strong>Threads</strong>: 1 main (poll) + 1..8 workeri + fiecare client serializat in main loop.</li>
+<li><strong>Socketi</strong>: 2 listen (9090 user, 9091 admin) + <code>MAX_CLIENTS</code>=128 conexiuni.</li>
+<li><strong>Pipe anonim</strong>: 1 (worker-&gt;main notificare).</li>
+<li><strong>Mutex-uri</strong>: 3 principale (queue, job_table, blocklist) + 1 pe logger.</li>
+<li><strong>Cond vars</strong>: 1 (queue.not_empty).</li>
+<li><strong>Linii de cod C</strong>: ~2500. Structura modulara pe 12 fisiere server + 3 clienti.</li>
+</ul>
+<hr />
+<p><strong>Sfat prezentare</strong>: cand primesti o intrebare, incepe cu definitia generala (1-2 propozitii) apoi justifica alegerea concreta din proiect (“noi am ales X pentru ca…”). Asta scoate in evidenta ca intelegi contextul, nu doar tema.</p>
+</body>
+</html>

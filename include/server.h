@@ -5,6 +5,7 @@
 #include "job.h"
 #include "protocol.h"
 #include "queue.h"
+#include "runtime_config.h"
 #include "worker.h"
 
 #define MAX_BLOCKED_IPS 32
@@ -33,10 +34,11 @@ typedef struct server_state {
     job_queue_t queue;
     job_table_t jobs;
     blocklist_t blocklist;
-    pthread_t workers[WORKER_COUNT];
-    worker_context_t worker_ctx[WORKER_COUNT];
+    pthread_t workers[MAX_WORKERS];
+    worker_context_t worker_ctx[MAX_WORKERS];
+    runtime_config_t config;
 } server_state_t;
 
-int server_run(void);
+int server_run(const runtime_config_t *cfg);
 
 #endif

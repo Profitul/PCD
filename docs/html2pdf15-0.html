@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>SDD</title>
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    span.underline{text-decoration: underline;}
+    div.column{display: inline-block; vertical-align: top; width: 50%;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    ul.task-list{list-style: none;}
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+</head>
+<body>
+<h1 id="sdd---software-design-document">SDD - Software Design Document</h1>
+<h1 id="stegapng---server-de-steganografie-pe-imagini-png">StegaPNG - Server de steganografie pe imagini PNG</h1>
+<p>Versiune: 1.0 Data: aprilie 2026 Materia: PCD, UVT</p>
+<hr />
+<h2 id="introducere">1. Introducere</h2>
+<h3 id="scop">1.1 Scop</h3>
+<p>Acest document descrie arhitectura interna si deciziile de design pentru implementarea sistemului <strong>StegaPNG</strong> (vezi SRS.md pentru cerinte).</p>
+<h3 id="vedere-de-ansamblu">1.2 Vedere de ansamblu</h3>
+<p>Sistemul urmareste un model simplu server-centric: serverul in C gestioneaza multiplex I/O, coada de job-uri si thread pool-ul de workeri; clientii (C si Python) trimit imagini si primesc rezultate prin acelasi protocol text+binar; admin-ul foloseste un port separat pentru comenzi de control.</p>
+<hr />
+<h2 id="arhitectura-sistemului">2. Arhitectura sistemului</h2>
+<h3 id="diagrama-logica">2.1 Diagrama logica</h3>
+<pre><code>+-------------+       +---------------------------------------+
+|  client C   |------&gt;|               Server C                |
+|  client Py  |  TCP  |  +---------+    +----------------+    |
++-------------+       |  | poll()  |---&gt;|  queue (FIFO)  |---&gt;+---+
+                      |  +---------+    +----------------+    | W |
++-------------+  TCP  |       ^                 ^             | O |
+|  admin C    |------&gt;|       |   pipe anonim   |             | R |
++-------------+       |       +-----------------+             | K |
+                      |  +-----------+   +--------+   +----+  | E |
+                      |  |  logger   |   | jobs   |   | bl |  | R |
+                      |  +-----------+   +--------+   +----+  | S |
+                      +---------------------------------------+---+
+                                         |
+                                         v
+                                 +-----------------+
+                                 |  libpng + LSB   |
+                                 +-----------------+</code></pre>
+<h3 id="componente-principale">2.2 Componente principale</h3>
+<ul>
+<li><strong>Main thread</strong> - initializare, signal handling, loop <code>poll()</code>.</li>
+<li><strong>Networking</strong> - listen user + listen admin, accept, read_line/read_exact.</li>
+<li><strong>Protocol parser</strong> - transforma comenzile text in <code>protocol_request_t</code>.</li>
+<li><strong>Job queue</strong> - FIFO cu mutex + condition variable.</li>
+<li><strong>Job table</strong> - metadata (id, state, path-uri, owner_fd, owner_ip, timpi).</li>
+<li><strong>Worker pool</strong> - N thread-uri consumatoare; per job apeleaza modulul stego.</li>
+<li><strong>Stego module</strong> - libpng decode -&gt; LSB embed/extract -&gt; libpng encode.</li>
+<li><strong>Storage</strong> - I/O pe disc pentru upload-uri si rezultate.</li>
+<li><strong>Logger</strong> - fisier de log protejat de mutex.</li>
+<li><strong>Blocklist</strong> - lista IP-uri refuzate la accept().</li>
+<li><strong>Notification pipe</strong> - worker scrie un byte, main se trezeste din <code>poll</code>.</li>
+</ul>
+<h3 id="structura-de-fisiere">2.3 Structura de fisiere</h3>
+<pre><code>stegapng-server/
+  include/            - header-e publice comune
+  src/
+    server/           - cod server + biblioteci comune (net, protocol, ...)
+    client/           - client ordinar C
+    admin/            - client admin C
+  python_client/      - client alternativ in Python
+  storage/
+    uploads/          - PNG-uri primite
+    results/          - rezultate generate
+    temp/             - fisiere intermediare
+  logs/               - fisiere de log
+  docs/               - SRS, SDD
+  scripts/            - scripturi demo (basic, concurrent, admin)
+  tests/              - test-uri dedicate (ex. stego_test)
+  poza/               - imagini sample
+  Makefile</code></pre>
+<hr />
+<h2 id="proiectarea-concurentei">3. Proiectarea concurentei</h2>
+<h3 id="model-general">3.1 Model general</h3>
+<ul>
+<li>1 thread principal (poll + accept + protocol).</li>
+<li>N thread-uri worker (implicit 4).</li>
+<li>1 mutex + 1 condition variable pe coada de job-uri.</li>
+<li>1 mutex pe tabela de job-uri.</li>
+<li>1 mutex pe logger.</li>
+<li>1 mutex pe blocklist.</li>
+<li>1 pipe anonim (read end in poll-ul thread-ului principal, write end folosit de worker cand un job isi schimba starea si main-ul trebuie sa actualizeze clientul).</li>
+</ul>
+<h3 id="ciclul-unui-job-nivel-b">3.2 Ciclul unui job (Nivel B)</h3>
+<ol type="1">
+<li>Client trimite comanda + date binare.</li>
+<li>Main thread valideaza, salveaza fisierele in <code>storage/uploads/</code>, creeaza un job in tabela cu id unic si stare QUEUED; trimite <code>JOB &lt;id&gt;</code> clientului.</li>
+<li>Main pune job-ul in coada (<code>queue_push</code>) si semnalizeaza cond var.</li>
+<li>Un worker preia job-ul, trece starea in RUNNING, apeleaza modulul stego.</li>
+<li>Worker scrie rezultatul in <code>storage/results/job_&lt;id&gt;.{png,txt,bin}</code>, seteaza starea in DONE/FAILED si timpii.</li>
+<li>(Opt) worker scrie 1 byte in notification pipe pentru a trezi main.</li>
+<li>Clientul face <code>STATUS &lt;id&gt;</code> pana primeste DONE, apoi <code>META</code> + <code>DOWNLOAD</code>.</li>
+</ol>
+<h3 id="evitarea-race-conditions-si-deadlock-urilor">3.3 Evitarea race conditions si deadlock-urilor</h3>
+<ul>
+<li>Coada: mutex in jurul push/pop; cond var pentru notificare.</li>
+<li>Tabela job-uri: mutex dedicat, locat strict in jurul accesului la fiecare camp.</li>
+<li>Ordine consistenta de acquire (nu se ia vreodata tabela inainte sa eliberezi coada si invers; singurul caz critic e cancel, unde flag-ul se seteaza sub mutex-ul tabelei si workerul il citeste la inceputul fiecarei etape).</li>
+<li>Logger-ul are mutexul lui, independent.</li>
+<li>Ignorare SIGPIPE global; fiecare <code>write</code> verifica rc.</li>
+</ul>
+<h3 id="shutdown-controlat">3.4 Shutdown controlat</h3>
+<ul>
+<li>Handler pentru SIGINT/SIGTERM seteaza un flag <code>atomic_bool</code>.</li>
+<li>Main-ul iese din <code>poll</code>, trimite <code>stop_signal</code> la workeri (pun un sentinel in coada), asteapta <code>pthread_join</code> pe fiecare, inchide logger + socket-uri.</li>
+</ul>
+<hr />
+<h2 id="protocol">4. Protocol</h2>
+<h3 id="principii">4.1 Principii</h3>
+<ul>
+<li>Comenzi in text ASCII, un verb pe linie (<code>COMMAND arg1 arg2 ... \n</code>).</li>
+<li>Payload binar declarat prin marimi explicite, urmeaza imediat dupa comanda.</li>
+<li>Raspunsurile sunt linii tip <code>OK ...</code> / <code>ERR ...</code> / <code>JOB &lt;id&gt;</code> / <code>DATA &lt;size&gt;</code>.</li>
+<li>Linii &lt;= 1024 caractere.</li>
+</ul>
+<h3 id="exemple">4.2 Exemple</h3>
+<pre><code>Client -&gt;  ENCODE_TEXT 12345 14\n&lt;12345 bytes PNG&gt;&lt;14 bytes text&gt;
+Server &lt;-  JOB 1\n
+
+Client -&gt;  STATUS 1\n
+Server &lt;-  STATUS 1 DONE\n
+
+Client -&gt;  DOWNLOAD 1\n
+Server &lt;-  DATA 12345\n&lt;12345 bytes PNG&gt;</code></pre>
+<h3 id="comenzi-suportate">4.3 Comenzi suportate</h3>
+<p>Vezi SRS.md cap. 3.2 / 3.3. Lista rapida: - user: <code>PING</code>, <code>HELP</code>, <code>CAPACITY</code>, <code>VALIDATE</code>, <code>ENCODE_TEXT</code>, <code>ENCODE_FILE</code>, <code>DECODE</code>, <code>STATUS</code>, <code>META</code>, <code>RESULT</code>, <code>DOWNLOAD</code>, <code>QUIT</code>. - admin: <code>PING</code>, <code>HELP</code>, <code>STATS</code>, <code>AVGDURATION</code>, <code>LISTJOBS</code>, <code>HISTORY</code>, <code>LISTCLIENTS</code>, <code>CANCEL</code>, <code>KICK</code>, <code>BLOCKIP</code>, <code>UNBLOCKIP</code>, <code>QUIT</code>.</p>
+<hr />
+<h2 id="modulul-stego">5. Modulul stego</h2>
+<h3 id="format-intern">5.1 Format intern</h3>
+<pre><code>[STG1][type:1][name_len:2 BE][name...][payload_len:4 BE][payload...][CRC32:4 BE]</code></pre>
+<p>CRC32 este calculat peste tot bufferul de la magic pana la capatul payload-ului (fara sa includa CRC32-ul insusi). Tabel precomputat pentru eficienta.</p>
+<h3 id="tehnica-lsb">5.2 Tehnica LSB</h3>
+<ul>
+<li>Ruleaza pe bit-urile de ordin 0 din fiecare canal R/G/B.</li>
+<li>La RGBA, canalul alpha (index 3 modulo 4) este pastrat neschimbat.</li>
+<li>1 byte de payload = 8 canale consecutive.</li>
+<li>Capacitate = <code>(W * H * data_channels) / 8</code>.</li>
+</ul>
+<h3 id="pipeline-libpng">5.3 Pipeline libpng</h3>
+<p>Decodare: <code>png_create_read_struct</code> -&gt; <code>png_read_info</code> -&gt; transformari (palette-&gt;RGB, gray-&gt;RGB, strip 16) -&gt; <code>png_read_image</code>. Encodare: <code>png_create_write_struct</code> -&gt; <code>png_set_IHDR</code> -&gt; <code>png_write_image</code> (color type pastrat, bit depth 8).</p>
+<h3 id="functii-publice">5.4 Functii publice</h3>
+<div class="sourceCode" id="cb5"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true"></a><span class="dt">int</span> stego_get_capacity(<span class="dt">const</span> <span class="dt">char</span> *png, stego_capacity_t *out);</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true"></a><span class="dt">int</span> stego_encode_text(<span class="dt">const</span> <span class="dt">char</span> *in, <span class="dt">const</span> <span class="dt">char</span> *out, <span class="dt">const</span> <span class="dt">char</span> *text, <span class="dt">size_t</span> n);</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true"></a><span class="dt">int</span> stego_encode_file(<span class="dt">const</span> <span class="dt">char</span> *in, <span class="dt">const</span> <span class="dt">char</span> *out, <span class="dt">const</span> <span class="dt">char</span> *payload, <span class="dt">const</span> <span class="dt">char</span> *name);</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true"></a><span class="dt">int</span> stego_decode(<span class="dt">const</span> <span class="dt">char</span> *png, stego_extracted_t *out);</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true"></a><span class="dt">void</span> stego_extracted_free(stego_extracted_t *e);</span></code></pre></div>
+<h3 id="erori-posibile">5.5 Erori posibile</h3>
+<p><code>STEGO_OK</code>, <code>STEGO_ERR_OPEN</code>, <code>STEGO_ERR_NOT_PNG</code>, <code>STEGO_ERR_UNSUPPORTED</code>, <code>STEGO_ERR_MEMORY</code>, <code>STEGO_ERR_CAPACITY</code>, <code>STEGO_ERR_LIBPNG</code>, <code>STEGO_ERR_MAGIC</code>, <code>STEGO_ERR_CRC</code>, <code>STEGO_ERR_IO</code>, <code>STEGO_ERR_ARG</code>.</p>
+<hr />
+<h2 id="design-detaliat-al-modulelor">6. Design detaliat al modulelor</h2>
+<h3 id="net.c">6.1 net.c</h3>
+<ul>
+<li><code>read_line(fd, buf, size)</code> - citeste pana la <code>\n</code> sau EOF.</li>
+<li><code>read_exact(fd, buf, n)</code> - citire blocking exact n bytes.</li>
+<li><code>write_all(fd, data, n)</code> - garantat scrie n bytes.</li>
+<li><code>discard_exact(fd, n)</code> - arunca n bytes (cand marimea e invalida).</li>
+</ul>
+<h3 id="queue.c-job.c">6.2 queue.c / job.c</h3>
+<ul>
+<li><code>job_queue_t</code> - coada circulara cu <code>pthread_mutex_t</code> + <code>pthread_cond_t</code>.</li>
+<li><code>job_table_t</code> - array static cu slot-uri, protejat de mutex.</li>
+<li>Cancel: <code>job_request_cancel</code> seteaza flag; worker verifica la inceput de faza.</li>
+</ul>
+<h3 id="worker.c">6.3 worker.c</h3>
+<ul>
+<li>Loop: <code>queue_pop_wait</code> -&gt; dispatch pe <code>job_type</code>:
+<ul>
+<li><code>JOB_TYPE_ENCODE_TEXT</code> / <code>_FILE</code> / <code>_DECODE</code> / <code>CAPACITY</code> / <code>VALIDATE</code>.</li>
+</ul></li>
+<li>Actualizeaza meta rezultat (result_kind, result_size, result_filename).</li>
+</ul>
+<h3 id="storage.c">6.4 storage.c</h3>
+<ul>
+<li><code>storage_init_dirs()</code> - creeaza arborele.</li>
+<li><code>storage_receive_to_file(fd, path, size)</code> - streaming socket -&gt; disk.</li>
+<li><code>storage_send_file(fd, path)</code> - streaming disk -&gt; socket.</li>
+</ul>
+<h3 id="logger.c">6.5 logger.c</h3>
+<ul>
+<li><code>logger_init(path)</code>, <code>logger_close()</code>, <code>logger_log(level, fmt, ...)</code>.</li>
+<li>Nivele: INFO, WARN, ERROR. Timestamp ISO local.</li>
+</ul>
+<h3 id="server-main">6.6 Server main</h3>
+<ul>
+<li><code>poll()</code> peste: listen_user, listen_admin, notify_pipe, clientii activi.</li>
+<li>La POLLIN pe listen: accept + evaluare blocklist + attach la poll set.</li>
+<li>La POLLIN pe client: read linie, apel <code>handle_user_command</code> / <code>handle_admin_command</code>.</li>
+<li>La <code>kick_requested</code> dupa iteratie: close si compactare.</li>
+</ul>
+<hr />
+<h2 id="diagrame-recomandate-pentru-prezentare">7. Diagrame recomandate pentru prezentare</h2>
+<ul>
+<li>Diagrama contextului (actori: user, admin, server, storage, libpng).</li>
+<li>Diagrama componentelor (asa cum apare in sectiunea 2.1).</li>
+<li>Diagrama secventei pentru <code>ENCODE_TEXT</code> (client -&gt; main -&gt; queue -&gt; worker -&gt; stego -&gt; storage -&gt; client).</li>
+<li>Diagrama starilor pentru <code>job_state_t</code> (QUEUED -&gt; RUNNING -&gt; DONE/FAILED/CANCELED).</li>
+<li>Diagrama modulului stego (libpng + container + CRC).</li>
+</ul>
+<hr />
+<h2 id="build-testare-demonstratie">8. Build, testare, demonstratie</h2>
+<h3 id="build">8.1 Build</h3>
+<pre><code>make                # server + client + admin_client
+make test           # stego_test (smoke LSB roundtrip)</code></pre>
+<h3 id="scripturi-demo-in-scripts">8.2 Scripturi demo (in <code>scripts/</code>)</h3>
+<ul>
+<li><code>demo_basic.sh</code> - ping, capacity, validate, encode/decode text, encode/decode file.</li>
+<li><code>demo_concurrent.sh</code> - 4 clienti paraleli (2 C + 2 Python).</li>
+<li><code>demo_admin.sh</code> - STATS, LISTCLIENTS, LISTJOBS, BLOCKIP, UNBLOCKIP, HISTORY.</li>
+</ul>
+<h3 id="prezentare">8.3 Prezentare</h3>
+<ol type="1">
+<li>Build clean cu flag-uri stricte.</li>
+<li><code>make test</code> (stego modul).</li>
+<li><code>demo_basic.sh</code> (user flow).</li>
+<li><code>demo_concurrent.sh</code> (coada + workeri).</li>
+<li><code>demo_admin.sh</code> (admin + blocklist).</li>
+<li>Consultare <code>logs/server_demo_*.log</code> pentru logging demonstrabil.</li>
+</ol>
+<hr />
+<h2 id="justificarea-alegerilor-tehnologice">9. Justificarea alegerilor tehnologice</h2>
+<ul>
+<li><strong>C + POSIX</strong>: cerinta explicita, permite control fin pe socket-uri, pthreads, pipe anonim; zero dependente de VM.</li>
+<li><strong>libpng</strong>: cerinta explicita pentru PNG; single point of truth pentru decodare + encodare.</li>
+<li><strong>TCP text+binar</strong>: simplu de debugat (tcpdump/nc lizibil), dar suporta payload-uri binare arbitrare prin marimi explicite.</li>
+<li><strong>poll() vs select()</strong>: poll lucreaza cu liste explicite si nu e limitat la FD_SETSIZE; mai clar cand numarul de clienti variaza.</li>
+<li><strong>pthread + mutex + condvar</strong>: API-ul POSIX standard, cerut de proiect.</li>
+<li><strong>Python pentru al doilea client</strong>: productiv pentru scripturi demo, rapid de scris, cu argparse si socket standard library.</li>
+</ul>
+<hr />
+<h2 id="riscuri-si-mitigatii">10. Riscuri si mitigatii</h2>
+<ul>
+<li><strong>Fisiere mari blocheaza workerul</strong> - limitam la 64 MB si procesam streaming.</li>
+<li><strong>Client abandonat lasa fisiere</strong> - job-urile au durata limita si fisierele pot fi sterse periodic (optional).</li>
+<li><strong>Race la cancel</strong> - flag atomic citit la inceputul fiecarei faze a job-ului.</li>
+<li><strong>Log contention</strong> - mutex unic pe logger; scriem pe linii scurte.</li>
+<li><strong>Deadlock</strong> - ordonare stricta a lock-urilor si fara sa tinem &gt; 1 lock in timp ce chemam I/O.</li>
+</ul>
+</body>
+</html>

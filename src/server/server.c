@@ -652,12 +652,12 @@ static int accept_new_connection(server_state_t *state, const int listen_fd,
 }
 
 static int init_workers(server_state_t *state) {
-    for (size_t i = 0; i < WORKER_COUNT; i++) {
+    for (int i = 0; i < state->config.worker_count; i++) {
         state->worker_ctx[i].queue = &state->queue;
         state->worker_ctx[i].table = &state->jobs;
         state->worker_ctx[i].notify_fd = state->pipe_write_fd;
         state->worker_ctx[i].running = &state->running;
-        state->worker_ctx[i].worker_index = i;
+        state->worker_ctx[i].worker_index = (size_t)i;
         if (pthread_create(&state->workers[i], NULL, worker_main, &state->worker_ctx[i]) != 0)
             return -1;
     }
@@ -667,12 +667,12 @@ static int init_workers(server_state_t *state) {
 static void stop_workers(server_state_t *state) {
     state->running = 0;
     job_queue_stop(&state->queue);
-    for (size_t i = 0; i < WORKER_COUNT; i++) {
+    for (int i = 0; i < state->config.worker_count; i++) {
         (void)pthread_join(state->workers[i], NULL);
     }
 }
 
-int server_run(void) {
+int server_run(const runtime_config_t *cfg) {
     server_state_t state;
     (void)memset(&state, 0, sizeof(state));
     state.listen_fd_user = -1;
@@ -680,6 +680,7 @@ int server_run(void) {
     state.pipe_read_fd = -1;
     state.pipe_write_fd = -1;
     state.running = 1;
+    state.config = *cfg;
     blocklist_init(&state.blocklist);
 
     client_session_t clients[MAX_CLIENTS];
@@ -697,15 +698,15 @@ int server_run(void) {
     state.pipe_write_fd = pipefd[1];
     if (set_nonblocking(state.pipe_read_fd) < 0) { perror("set_nonblocking"); return EXIT_FAILURE; }
 
-    state.listen_fd_user  = create_listen_socket(SERVER_PORT);
+    state.listen_fd_user  = create_listen_socket((uint16_t)state.config.user_port);
     if (state.listen_fd_user < 0)  { perror("listen user"); return EXIT_FAILURE; }
-    state.listen_fd_admin = create_listen_socket(ADMIN_PORT);
+    state.listen_fd_admin = create_listen_socket((uint16_t)state.config.admin_port);
     if (state.listen_fd_admin < 0) { perror("listen admin"); return EXIT_FAILURE; }
 
     if (init_workers(&state) < 0) { perror("pthread_create"); return EXIT_FAILURE; }
 
     logger_log(LOG_LEVEL_INFO, "Server started user_port=%d admin_port=%d workers=%d",
-               SERVER_PORT, ADMIN_PORT, WORKER_COUNT);
+               state.config.user_port, state.config.admin_port, state.config.worker_count);
 
     while (g_running != 0) {
         struct pollfd pfds[MAX_POLL_FDS];
@@ -756,7 +757,6 @@ int server_run(void) {
     if (state.listen_fd_user >= 0)  (void)close(state.listen_fd_user);
     if (state.listen_fd_admin >= 0) (void)close(state.listen_fd_admin);
     if (state.pipe_read_fd >= 0)    (void)close(state.pipe_read_fd);
-    if (state.pipe_write_fd >= 0)   (void)close(state.pipe_write_fd);
     job_queue_destroy(&state.queue);
     job_table_destroy(&state.jobs);
     blocklist_destroy(&state.blocklist);

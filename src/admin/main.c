@@ -3,6 +3,7 @@
 #include "net.h"
 
 #include <ctype.h>
+#include <sys/wait.h>
 
 static int connect_to_admin(const char *host, const uint16_t port) {
     const int fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -45,6 +46,7 @@ static void print_menu(void) {
     (void)puts(" 10)  PING          - test conexiune");
     (void)puts(" 11)  HELP          - comenzile suportate de server");
     (void)puts(" 12)  RAW           - trimite o comanda libera");
+    (void)puts(" 13)  EXPORT LOG    - arhiveaza logs/ (fork + execl tar + wait)");
     (void)puts("  0)  QUIT          - iesire");
     (void)puts("-----------------------------------------------");
 }
@@ -80,6 +82,34 @@ static int do_with_arg(const int fd, const char *verb, const char *label) {
     (void)snprintf(cmd, sizeof(cmd), "%s %s\n", verb, arg);
     if (send_cmd(fd, cmd) < 0) return -1;
     return recv_and_print(fd);
+}
+
+static int do_export_logs(void) {
+    char dest[256];
+    if (prompt_nonempty("Arhiva destinatie (ex. logs_backup.tar.gz)", dest, sizeof(dest)) < 0) {
+        (void)puts("(anulat)");
+        return 0;
+    }
+
+    const pid_t pid = fork();
+    if (pid < 0) { perror("fork"); return -1; }
+    if (pid == 0) {
+        (void)execl("/bin/tar", "tar", "czf", dest, "logs/", (char *)NULL);
+        perror("execl /bin/tar");
+        _exit(127);
+    }
+
+    (void)printf("[parent] child pid=%d, astept tar...\n", (int)pid);
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0) { perror("waitpid"); return -1; }
+    if (WIFEXITED(status)) {
+        const int rc = WEXITSTATUS(status);
+        if (rc == 0) (void)printf("OK: logs arhivate in %s (tar exit=0)\n", dest);
+        else         (void)printf("ERR: tar a iesit cu cod %d\n", rc);
+    } else if (WIFSIGNALED(status)) {
+        (void)printf("ERR: tar ucis de semnalul %d\n", WTERMSIG(status));
+    }
+    return 0;
 }
 
 static int do_raw(const int fd) {
@@ -132,6 +162,7 @@ int main(int argc, char *argv[]) {
             case 10: rc = do_simple(fd, "PING\n"); break;
             case 11: rc = do_simple(fd, "HELP\n"); break;
             case 12: rc = do_raw(fd); break;
+            case 13: rc = do_export_logs(); break;
             case 0:
                 (void)do_simple(fd, "QUIT\n");
                 running = 0;

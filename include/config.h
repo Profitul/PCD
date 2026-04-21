@@ -11,7 +11,8 @@
 #define SMALL_BUFFER_SIZE 256
 #define LOG_PATH "logs/server.log"
 
-#define WORKER_COUNT 3
+#define MAX_WORKERS 8
+#define DEFAULT_WORKER_COUNT 3
 
 #define MAX_UPLOAD_BYTES (64ULL * 1024ULL * 1024ULL)
 #define MAX_TEXT_BYTES   (1ULL  * 1024ULL * 1024ULL)
@@ -22,6 +23,7 @@
 #define STORAGE_RESULTS  "storage/results"
 #define STORAGE_TEMP     "storage/temp"
 
+#define DEFAULT_CONFIG_PATH "config/server.conf"
 #define CHUNK_SIZE 65536
 
 #endif
