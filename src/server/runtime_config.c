@@ -13,11 +13,13 @@
 
 #define STEGA_VERSION "1.0.0"
 
+/* Copie sigura de string cu snprintf, garanteaza null-termination. */
 static void copy_str(char *dst, const char *src, size_t dst_size) {
     if (src == NULL || dst_size == 0U) return;
     (void)snprintf(dst, dst_size, "%s", src);
 }
 
+/* Initializeaza configuratia cu valorile implicite din config.h. */
 void runtime_config_set_defaults(runtime_config_t *cfg) {
     (void)memset(cfg, 0, sizeof(*cfg));
     cfg->user_port = SERVER_PORT;
@@ -29,6 +31,8 @@ void runtime_config_set_defaults(runtime_config_t *cfg) {
     cfg->max_upload_bytes = MAX_UPLOAD_BYTES;
 }
 
+/* Incarca configuratia din fisier libconfig (daca serverul a fost compilat cu HAVE_LIBCONFIG).
+   Valorile din fisier suprascriu valorile implicite. */
 int runtime_config_load_file(runtime_config_t *cfg, const char *path) {
     if (path == NULL || path[0] == '\0') return -1;
 #ifdef HAVE_LIBCONFIG
@@ -69,6 +73,7 @@ int runtime_config_load_file(runtime_config_t *cfg, const char *path) {
 #endif
 }
 
+/* Citeste o variabila de mediu ca intreg. Returneaza 1 daca valoarea a fost gasita si parsata. */
 static int parse_int_env(const char *name, int *out) {
     const char *v = getenv(name);
     if (v == NULL || v[0] == '\0') return 0;
@@ -79,6 +84,8 @@ static int parse_int_env(const char *name, int *out) {
     return 1;
 }
 
+/* Aplica variabilele de mediu STEGA_* peste configuratia curenta.
+   Variabilele de mediu suprascriu fisierul de config dar sunt suprascrise de CLI. */
 void runtime_config_apply_env(runtime_config_t *cfg) {
     int iv = 0;
     if (parse_int_env("STEGA_USER_PORT", &iv))  cfg->user_port = iv;
@@ -121,6 +128,8 @@ void runtime_config_print_version(void) {
 #endif
 }
 
+/* Parseaza argumentele CLI cu getopt_long si le aplica peste configuratia curenta.
+   Seteaza *should_exit = 1 daca s-a cerut --help sau --version (nu trebuie pornit serverul). */
 int runtime_config_apply_cli(runtime_config_t *cfg, int argc, char *argv[], int *should_exit) {
     *should_exit = 0;
     static const struct option long_opts[] = {
@@ -159,6 +168,7 @@ int runtime_config_apply_cli(runtime_config_t *cfg, int argc, char *argv[], int 
     return 0;
 }
 
+/* Logeaza configuratia finala (dupa aplicarea tuturor surselor: defaults, file, env, CLI). */
 void runtime_config_log_summary(const runtime_config_t *cfg) {
     logger_log(LOG_LEVEL_INFO,
         "Config: user_port=%d admin_port=%d workers=%d log=%s storage=%s max_upload=%lluMB src=%s",
@@ -168,6 +178,7 @@ void runtime_config_log_summary(const runtime_config_t *cfg) {
         cfg->config_file);
 }
 
+/* Logeaza informatii despre mediul de executie: OS, hostname, PID, user, PATH, LANG. */
 void runtime_config_log_environment(void) {
     struct utsname un;
     if (uname(&un) == 0) {

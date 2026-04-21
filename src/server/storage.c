@@ -2,6 +2,7 @@
 #include "net.h"
 #include "storage.h"
 
+/* Verifica daca directorul exista; il creeaza cu permisiunile 0755 daca nu. */
 int ensure_directory_exists(const char *path) {
     if (path == NULL) {
         errno = EINVAL;
@@ -24,6 +25,7 @@ int ensure_directory_exists(const char *path) {
     return 0;
 }
 
+/* Returneaza dimensiunea fisierului in bytes prin stat(). */
 int get_file_size_bytes(const char *path, off_t *size_out) {
     if (path == NULL || size_out == NULL) {
         errno = EINVAL;
@@ -39,6 +41,7 @@ int get_file_size_bytes(const char *path, off_t *size_out) {
     return 0;
 }
 
+/* Creeaza ierarhia de directoare necesara (root, uploads, results, temp). */
 int storage_init_dirs(void) {
     if (ensure_directory_exists(STORAGE_ROOT) < 0) {
         return -1;
@@ -55,6 +58,7 @@ int storage_init_dirs(void) {
     return 0;
 }
 
+/* Construieste calea pentru un fisier de upload: uploads/job_<id>.<suffix>. */
 int storage_make_upload_path(const uint64_t job_id, const char *suffix, char *out, const size_t out_size) {
     if (out == NULL || out_size == 0U) {
         return -1;
@@ -68,6 +72,7 @@ int storage_make_upload_path(const uint64_t job_id, const char *suffix, char *ou
     return 0;
 }
 
+/* Construieste calea pentru un fisier rezultat: results/job_<id>.<suffix>. */
 int storage_make_result_path(const uint64_t job_id, const char *suffix, char *out, const size_t out_size) {
     if (out == NULL || out_size == 0U) {
         return -1;
@@ -81,6 +86,8 @@ int storage_make_result_path(const uint64_t job_id, const char *suffix, char *ou
     return 0;
 }
 
+/* Primeste exact size bytes de la fd si ii scrie in fisierul de la dst_path.
+   In caz de eroare sterge fisierul partial creat. */
 int storage_receive_to_file(const int fd, const size_t size, const char *dst_path) {
     if (dst_path == NULL) {
         return -1;
@@ -124,6 +131,7 @@ int storage_receive_to_file(const int fd, const size_t size, const char *dst_pat
     return 0;
 }
 
+/* Trimite continutul fisierului de la src_path pe socket-ul fd in bucati de CHUNK_SIZE. */
 int storage_send_file(const int fd, const char *src_path) {
     if (src_path == NULL) {
         return -1;
@@ -156,6 +164,7 @@ int storage_send_file(const int fd, const char *src_path) {
     return 0;
 }
 
+/* Citeste tot continutul unui fisier in buffer (null-terminat). Seteaza *out_len la bytes cititi. */
 int storage_read_all(const char *path, char *buffer, const size_t buffer_size, size_t *out_len) {
     if (path == NULL || buffer == NULL || buffer_size == 0U) {
         return -1;
@@ -175,6 +184,8 @@ int storage_read_all(const char *path, char *buffer, const size_t buffer_size, s
     return 0;
 }
 
+/* Copiaza un fisier in directorul de uploads cu un nume unic bazat pe timestamp.
+   Seteaza dst_path la calea fisierului copiat. */
 int copy_file_to_storage(const char *src_path, char *dst_path, const size_t dst_path_size) {
     if (src_path == NULL || dst_path == NULL || dst_path_size == 0U) {
         errno = EINVAL;
@@ -193,6 +204,7 @@ int copy_file_to_storage(const char *src_path, char *dst_path, const size_t dst_
         return -1;
     }
 
+    /* Unicitate garantata prin combinatia sec + nsec din timestamp */
     const int rc = snprintf(dst_path, dst_path_size, "%s/%ld_%ld_%s",
                             STORAGE_UPLOADS, (long)ts.tv_sec, (long)ts.tv_nsec, base);
     if (rc < 0 || (size_t)rc >= dst_path_size) {

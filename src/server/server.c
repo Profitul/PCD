@@ -5,14 +5,16 @@
 #include "server.h"
 #include "storage.h"
 
-static volatile sig_atomic_t g_running = 1;
+static volatile sig_atomic_t g_running = 1; /* flag global pentru oprirea graceful a serverului */
 
+/* Handler de semnal pentru SIGINT/SIGTERM: seteaza g_running = 0. */
 static void handle_signal(const int signo) {
     if (signo == SIGINT || signo == SIGTERM) {
         g_running = 0;
     }
 }
 
+/* Instaleaza handler pentru SIGINT/SIGTERM si ignora SIGPIPE (scrieri pe socket inchis). */
 static int install_signal_handlers(void) {
     struct sigaction sa;
     (void)memset(&sa, 0, sizeof(sa));
@@ -27,6 +29,7 @@ static int install_signal_handlers(void) {
     return 0;
 }
 
+/* Formateaza si trimite un raspuns text pe socket (similar printf dar pe fd). */
 static int send_responsef(const int fd, const char *fmt, ...) {
     if (fmt == NULL) return -1;
     char buffer[BUFFER_SIZE];
@@ -39,6 +42,7 @@ static int send_responsef(const int fd, const char *fmt, ...) {
     return (write_all(fd, buffer, strlen(buffer)) < 0) ? -1 : 0;
 }
 
+/* Initializeaza lista de IP-uri blocate cu mutex. */
 static void blocklist_init(blocklist_t *bl) {
     (void)memset(bl, 0, sizeof(*bl));
     (void)pthread_mutex_init(&bl->mutex, NULL);
@@ -48,6 +52,7 @@ static void blocklist_destroy(blocklist_t *bl) {
     (void)pthread_mutex_destroy(&bl->mutex);
 }
 
+/* Adauga un IP in blocklist daca nu exista deja si daca nu s-a atins limita MAX_BLOCKED_IPS. */
 static int blocklist_add(blocklist_t *bl, const char *ip) {
     if (ip == NULL || ip[0] == '\0') return -1;
     int rc = -1;
@@ -67,6 +72,7 @@ static int blocklist_add(blocklist_t *bl, const char *ip) {
     return rc;
 }
 
+/* Sterge un IP din blocklist prin shift al elementelor urmatoare (compactare array). */
 static int blocklist_remove(blocklist_t *bl, const char *ip) {
     if (ip == NULL) return -1;
     int rc = -1;
@@ -116,6 +122,7 @@ static int blocklist_format(blocklist_t *bl, char *out, size_t out_size) {
     return 0;
 }
 
+/* Inchide conexiunea clientului, reseteaza campurile sesiunii la starea initiala. */
 static void close_client(client_session_t *client) {
     if (client == NULL || !client->active) return;
     logger_log(LOG_LEVEL_INFO, "Client disconnected fd=%d ip=%s", client->fd, client->addr_str);
@@ -127,6 +134,7 @@ static void close_client(client_session_t *client) {
     (void)memset(client->addr_str, 0, sizeof(client->addr_str));
 }
 
+/* Gaseste un slot liber in array-ul de clienti si initializeaza sesiunea noua. */
 static int add_client(client_session_t clients[], const int client_fd,
                       const client_type_t type, const char *addr_str) {
     for (size_t i = 0; i < MAX_CLIENTS; i++) {
@@ -147,6 +155,8 @@ static int add_client(client_session_t clients[], const int client_fd,
     return -1;
 }
 
+/* Reconstruieste array-ul pollfd inainte de fiecare apel poll().
+   Ordinea: user_listen_fd, admin_listen_fd, pipe_read_fd, clienti activi. */
 static void rebuild_pollfds(const server_state_t *state, client_session_t clients[],
                             struct pollfd pfds[], nfds_t *count) {
     nfds_t idx = 0U;
@@ -164,6 +174,8 @@ static void rebuild_pollfds(const server_state_t *state, client_session_t client
     *count = idx;
 }
 
+/* Dreneaza evenimentele trimise de workeri pe pipe si le logheaza.
+   Folosit pentru a afla cand se termina un job fara polling activ. */
 static void handle_worker_pipe(server_state_t *state) {
     worker_event_t event;
     while (1) {
@@ -185,6 +197,7 @@ static void handle_worker_pipe(server_state_t *state) {
     }
 }
 
+/* Creeaza un job nou, il asociaza optional cu stored_path si il adauga in coada de procesare. */
 static int enqueue_job(server_state_t *state, client_session_t *client,
                        const job_type_t type, const char *payload,
                        const char *input_path, const char *stored_path) {
@@ -207,6 +220,8 @@ static int enqueue_job(server_state_t *state, client_session_t *client,
     return send_responsef(client->fd, "JOB %llu\n", (unsigned long long)job->id);
 }
 
+/* Primeste un fisier PNG de la client si il salveaza pe disk; seteaza out_path.
+   Valideaza dimensiunea maxima inainte de a receptiona. */
 static int receive_png_to_upload(server_state_t *state, client_session_t *client,
                                  uint64_t png_size, char *out_path, size_t out_path_size) {
     if (png_size == 0U || png_size > MAX_UPLOAD_BYTES) {
@@ -228,6 +243,8 @@ static int receive_png_to_upload(server_state_t *state, client_session_t *client
     return 0;
 }
 
+/* Primeste un fisier auxiliar (text sau payload) de la client cu verificare de marime maxima.
+   Daca size == 0, creeaza un fisier gol fara a citi nimic din fd. */
 static int receive_extra_to_file(const int fd, const uint64_t size,
                                  const uint64_t max, const char *label,
                                  char *out_path, size_t out_path_size,
@@ -607,6 +624,8 @@ static void handle_client_command(server_state_t *state,
     }
 }
 
+/* Accepta o conexiune noua, verifica IP-ul in blocklist si limita de admin unic,
+   adauga clientul in array si ii trimite "OK connected". */
 static int accept_new_connection(server_state_t *state, const int listen_fd,
                                  client_session_t clients[],
                                  const client_type_t type,
@@ -651,6 +670,7 @@ static int accept_new_connection(server_state_t *state, const int listen_fd,
     return 0;
 }
 
+/* Porneste worker_count thread-uri si le configureaza contextul (coada, tabela, pipe, flag). */
 static int init_workers(server_state_t *state) {
     for (int i = 0; i < state->config.worker_count; i++) {
         state->worker_ctx[i].queue = &state->queue;
@@ -664,6 +684,7 @@ static int init_workers(server_state_t *state) {
     return 0;
 }
 
+/* Semnalizeaza oprirea workerilor prin flag si oprirea cozii, apoi asteapta thread-urile. */
 static void stop_workers(server_state_t *state) {
     state->running = 0;
     job_queue_stop(&state->queue);
@@ -672,6 +693,8 @@ static void stop_workers(server_state_t *state) {
     }
 }
 
+/* Punctul central al serverului: initializeaza toate componentele, porneste workerii,
+   si ruleaza bucla principala poll() pentru acceptarea conexiunilor si procesarea comenzilor. */
 int server_run(const runtime_config_t *cfg) {
     server_state_t state;
     (void)memset(&state, 0, sizeof(state));
@@ -692,6 +715,7 @@ int server_run(const runtime_config_t *cfg) {
     if (job_table_init(&state.jobs) < 0)      { perror("job_table_init"); return EXIT_FAILURE; }
     if (job_queue_init(&state.queue) < 0)     { perror("job_queue_init"); return EXIT_FAILURE; }
 
+    /* Pipe-ul este folosit de workeri pentru a notifica asincron serverul cand un job se termina */
     int pipefd[2];
     if (pipe(pipefd) < 0) { perror("pipe"); return EXIT_FAILURE; }
     state.pipe_read_fd = pipefd[0];
@@ -713,6 +737,7 @@ int server_run(const runtime_config_t *cfg) {
         nfds_t nfds = 0U;
         rebuild_pollfds(&state, clients, pfds, &nfds);
 
+        /* Timeout de 1s pentru a verifica periodic g_running (shutdown graceful) */
         const int ready = poll(pfds, nfds, 1000);
         if (ready < 0) {
             if (errno == EINTR) continue;
@@ -744,6 +769,7 @@ int server_run(const runtime_config_t *cfg) {
             }
         }
 
+        /* Procesam kick-urile la finalul iteratiei, dupa ce am terminat cu pfds */
         for (size_t i = 0; i < MAX_CLIENTS; i++) {
             if (clients[i].active && clients[i].kick_requested) {
                 close_client(&clients[i]);

@@ -1,5 +1,6 @@
 #include "job.h"
 
+/* Seteaza ts la ora curenta (CLOCK_REALTIME). */
 static void set_time_now(struct timespec *ts) {
     if (ts == NULL) {
         return;
@@ -7,12 +8,14 @@ static void set_time_now(struct timespec *ts) {
     (void)clock_gettime(CLOCK_REALTIME, ts);
 }
 
+/* Calculeaza diferenta de timp intre doua timespec-uri in milisecunde. */
 static double timespec_diff_ms(const struct timespec *start, const struct timespec *end) {
     const double s = (double)(end->tv_sec - start->tv_sec) * 1000.0;
     const double ns = (double)(end->tv_nsec - start->tv_nsec) / 1.0e6;
     return s + ns;
 }
 
+/* Initializeaza tabela de joburi: zero-fill, next_id = 1, mutex. */
 int job_table_init(job_table_t *table) {
     if (table == NULL) {
         return -1;
@@ -25,6 +28,7 @@ int job_table_init(job_table_t *table) {
     return 0;
 }
 
+/* Elibereaza toti jobii din tabela si distruge mutex-ul. */
 void job_table_destroy(job_table_t *table) {
     if (table == NULL) {
         return;
@@ -42,6 +46,8 @@ void job_table_destroy(job_table_t *table) {
     (void)pthread_mutex_destroy(&table->mutex);
 }
 
+/* Aloca si initializeaza un job nou, il adauga in tabela.
+   Returneaza pointerul la job sau NULL daca tabela e plina sau alocarea esueaza. */
 job_t *job_table_create_job(job_table_t *table,
                             const int owner_fd,
                             const char *owner_ip,
@@ -97,6 +103,7 @@ job_t *job_table_create_job(job_table_t *table,
     return job;
 }
 
+/* Cauta un job dupa id in tabela (linear scan). Returneaza NULL daca nu e gasit. */
 job_t *job_table_find(job_table_t *table, const uint64_t job_id) {
     if (table == NULL || job_id == 0U) {
         return NULL;
@@ -145,6 +152,8 @@ const char *job_result_kind_to_string(const job_result_kind_t kind) {
     }
 }
 
+/* Seteaza flag-ul de anulare pe job daca acesta e in stare QUEUED sau RUNNING.
+   Returneaza true daca anularea a fost acceptata. */
 bool job_request_cancel(job_t *job) {
     if (job == NULL) return false;
     bool ok = false;
@@ -157,6 +166,7 @@ bool job_request_cancel(job_t *job) {
     return ok;
 }
 
+/* Actualizeaza starea jobului si inregistreaza timestamps pentru RUNNING si stari finale. */
 void job_set_state(job_t *job, const job_state_t state) {
     if (job == NULL) return;
     (void)pthread_mutex_lock(&job->mutex);
@@ -293,6 +303,7 @@ job_type_t job_get_type(job_t *job) {
     return type;
 }
 
+/* Colecteaza statistici agregate din toate joburile: numaratori pe stare si durata medie. */
 void job_table_collect_stats(job_table_t *table, job_stats_t *stats) {
     if (table == NULL || stats == NULL) return;
     (void)memset(stats, 0, sizeof(*stats));
@@ -325,9 +336,11 @@ void job_table_collect_stats(job_table_t *table, job_stats_t *stats) {
     }
     (void)pthread_mutex_unlock(&table->mutex);
 
+    /* Media duratei doar pentru joburi incheiate (DONE sau FAILED) */
     stats->avg_duration_ms = (finished_count > 0U) ? (total_duration / (double)finished_count) : 0.0;
 }
 
+/* Formateaza lista tuturor joburilor actuale ca string semicolon-separat in buffer. */
 int job_table_format_list(job_table_t *table, char *buffer, const size_t buffer_size) {
     if (table == NULL || buffer == NULL || buffer_size == 0U) return -1;
     buffer[0] = '\0';
@@ -364,6 +377,7 @@ int job_table_format_list(job_table_t *table, char *buffer, const size_t buffer_
     return 0;
 }
 
+/* Formateaza istoricul ultimelor max_items joburi incheiate (iterate invers pentru cele mai recente). */
 int job_table_format_history(job_table_t *table, char *buffer, const size_t buffer_size, const size_t max_items) {
     if (table == NULL || buffer == NULL || buffer_size == 0U) return -1;
     buffer[0] = '\0';
@@ -404,6 +418,8 @@ int job_table_format_history(job_table_t *table, char *buffer, const size_t buff
     return 0;
 }
 
+/* Seteaza cancel_requested pe toate joburile QUEUED/RUNNING ale unui client.
+   Util cand clientul se deconecteaza fara sa-si astepte joburile. */
 int job_table_cancel_by_owner(job_table_t *table, const int owner_fd) {
     if (table == NULL) return 0;
     int count = 0;

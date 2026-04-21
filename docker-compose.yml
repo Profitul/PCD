@@ -1,0 +1,14 @@
+services:
+  stegapng:
+    build: .
+    container_name: stegapng
+    image: stegapng:latest
+    ports:
+      - "9090:9090"
+      - "9091:9091"
+    volumes:
+      - ./logs:/app/logs
+      - ./storage:/app/storage
+    stdin_open: true
+    tty: true
+    command: ["./server"]

@@ -4,6 +4,9 @@
 #include "runtime_config.h"
 #include "server.h"
 
+/* Cauta -c/--config in argv inainte de parsarea completa getopt,
+   pentru a putea incarca fisierul de config inainte ca celelalte optiuni sa fie aplicate.
+   Fallback la variabila de mediu STEGA_CONFIG daca nu exista argument CLI. */
 static void preparse_config_path(int argc, char *argv[], char *out, size_t out_size) {
     for (int i = 1; i < argc - 1; i++) {
         if (strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--config") == 0) {
@@ -17,6 +20,8 @@ static void preparse_config_path(int argc, char *argv[], char *out, size_t out_s
     }
 }
 
+/* Entry point: incarca configuratia in ordinea prioritatii (defaults < file < env < CLI),
+   initializeaza loggerul si porneste serverul. */
 int main(int argc, char *argv[]) {
     runtime_config_t cfg;
     runtime_config_set_defaults(&cfg);

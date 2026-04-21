@@ -4,6 +4,8 @@
 
 #include <unistd.h>
 
+/* Creeaza un socket TCP si se conecteaza la serverul de pe host:port.
+   Returneaza fd-ul socketului sau -1 la eroare. */
 static int connect_to_server(const char *host, const uint16_t port) {
     const int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) return -1;
@@ -16,6 +18,7 @@ static int connect_to_server(const char *host, const uint16_t port) {
     return fd;
 }
 
+/* Citeste si afiseaza mesajul de bun-venit trimis de server la conectare. */
 static int read_banner(const int fd) {
     char buf[BUFFER_SIZE];
     if (read_line(fd, buf, sizeof(buf)) <= 0) return -1;
@@ -34,6 +37,8 @@ static int send_line(const int fd, const char *line) {
     return write_all(fd, line, strlen(line)) < 0 ? -1 : 0;
 }
 
+/* Trimite continutul fisierului de la path pe socket in bucati de CHUNK_SIZE.
+   Seteaza *size_out la dimensiunea fisierului. */
 static int send_file_bytes(const int fd, const char *path, off_t *size_out) {
     FILE *fp = fopen(path, "rb");
     if (fp == NULL) { perror("fopen"); return -1; }
@@ -58,6 +63,7 @@ static int send_file_bytes(const int fd, const char *path, off_t *size_out) {
     return 0;
 }
 
+/* Polleaza starea jobului la fiecare 250ms pana la terminare sau timeout de 30 secunde. */
 static int wait_for_done(const int fd, uint64_t job_id) {
     char buf[BUFFER_SIZE];
     for (int i = 0; i < 120; i++) {
@@ -74,17 +80,20 @@ static int wait_for_done(const int fd, uint64_t job_id) {
     return -1;
 }
 
+/* Extrage job_id din raspunsul "JOB <id>" al serverului. */
 static uint64_t parse_job_id(const char *line) {
     const char *p = strstr(line, "JOB ");
     if (p == NULL) return 0;
     return strtoull(p + 4, NULL, 10);
 }
 
+/* Extrage dimensiunea din raspunsul "DATA <size>" al serverului. */
 static long parse_data_size(const char *line) {
     if (strncmp(line, "DATA ", 5) != 0) return -1;
     return strtol(line + 5, NULL, 10);
 }
 
+/* Trimite DOWNLOAD <job_id>, primeste "DATA <size>" si salveaza bytes-ii in out_path. */
 static int download_result(const int fd, uint64_t job_id, const char *out_path) {
     char cmd[64], buf[BUFFER_SIZE];
     (void)snprintf(cmd, sizeof(cmd), "DOWNLOAD %llu\n", (unsigned long long)job_id);
@@ -111,6 +120,7 @@ static int download_result(const int fd, uint64_t job_id, const char *out_path) 
     return 0;
 }
 
+/* Trimite comanda ENCODE_TEXT urmata de PNG si textul de ascuns, apoi descarca rezultatul. */
 static int cmd_encode_text(const int fd, const char *png_in, const char *text, const char *out_png) {
     off_t png_size = 0;
     struct stat st;
@@ -144,6 +154,7 @@ static int cmd_encode_text(const int fd, const char *png_in, const char *text, c
     return download_result(fd, job_id, out_png);
 }
 
+/* Trimite comanda ENCODE_FILE: PNG + filename + fisierul payload, descarca PNG-ul rezultat. */
 static int cmd_encode_file(const int fd, const char *png_in, const char *file_in, const char *out_png) {
     struct stat s1, s2;
     if (stat(png_in, &s1) < 0) { perror("stat png"); return -1; }
@@ -169,6 +180,7 @@ static int cmd_encode_file(const int fd, const char *png_in, const char *file_in
     return download_result(fd, job_id, out_png);
 }
 
+/* Trimite comanda DECODE cu PNG-ul, asteapta terminarea jobului si descarca payload-ul extras. */
 static int cmd_decode(const int fd, const char *png_in, const char *out_path) {
     struct stat s;
     if (stat(png_in, &s) < 0) { perror("stat"); return -1; }
@@ -191,6 +203,7 @@ static int cmd_decode(const int fd, const char *png_in, const char *out_path) {
     return download_result(fd, job_id, out_path);
 }
 
+/* Trimite comanda CAPACITY, asteapta jobul si afiseaza capacitatea LSB a imaginii. */
 static int cmd_capacity(const int fd, const char *png_in) {
     struct stat s;
     if (stat(png_in, &s) < 0) { perror("stat"); return -1; }
@@ -211,6 +224,7 @@ static int cmd_capacity(const int fd, const char *png_in) {
     return 0;
 }
 
+/* Trimite comanda VALIDATE, asteapta jobul si afiseaza metadatele PNG-ului. */
 static int cmd_validate(const int fd, const char *png_in) {
     struct stat s;
     if (stat(png_in, &s) < 0) { perror("stat"); return -1; }
@@ -243,6 +257,7 @@ static void usage(const char *argv0) {
         argv0, argv0, argv0, argv0, argv0, argv0);
 }
 
+/* Entry point: parseaza comanda din argv, se conecteaza la server si executa comanda. */
 int main(int argc, char *argv[]) {
     if (argc < 2) { usage(argv[0]); return EXIT_FAILURE; }
 

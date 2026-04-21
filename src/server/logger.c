@@ -3,6 +3,7 @@
 static FILE *g_log_file = NULL;
 static pthread_mutex_t g_log_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+/* Converteste nivelul de log in string pentru afisare. */
 static const char *level_to_string(const log_level_t level) {
     switch (level) {
         case LOG_LEVEL_INFO:
@@ -16,6 +17,7 @@ static const char *level_to_string(const log_level_t level) {
     }
 }
 
+/* Deschide fisierul de log in modul append. Daca path e NULL, logul merge la stderr. */
 int logger_init(const char *path) {
     if (path == NULL) {
         return -1;
@@ -29,6 +31,7 @@ int logger_init(const char *path) {
     return 0;
 }
 
+/* Inchide fisierul de log (thread-safe). */
 void logger_close(void) {
     (void)pthread_mutex_lock(&g_log_mutex);
 
@@ -40,6 +43,7 @@ void logger_close(void) {
     (void)pthread_mutex_unlock(&g_log_mutex);
 }
 
+/* Scrie un mesaj formatat in log cu timestamp si nivel (thread-safe prin mutex global). */
 void logger_log(const log_level_t level, const char *fmt, ...) {
     if (fmt == NULL) {
         return;
@@ -47,7 +51,7 @@ void logger_log(const log_level_t level, const char *fmt, ...) {
 
     (void)pthread_mutex_lock(&g_log_mutex);
 
-    FILE *out = (g_log_file != NULL) ? g_log_file : stderr;
+    FILE *out = (g_log_file != NULL) ? g_log_file : stderr; /* fallback la stderr daca fisierul nu e deschis */
 
     time_t now = time(NULL);
     struct tm tm_now;

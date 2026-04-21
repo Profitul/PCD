@@ -1,6 +1,7 @@
 #include "config.h"
 #include "net.h"
 
+/* Seteaza file descriptor-ul fd in modul non-blocking folosind fcntl. */
 int set_nonblocking(const int fd) {
     const int flags = fcntl(fd, F_GETFL);
     if (flags < 0) {
@@ -14,6 +15,8 @@ int set_nonblocking(const int fd) {
     return 0;
 }
 
+/* Creeaza un socket TCP de ascultare pe portul dat.
+   Seteaza SO_REUSEADDR pentru a evita "address already in use" la restart rapid. */
 int create_listen_socket(const uint16_t port) {
     const int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) {
@@ -37,7 +40,7 @@ int create_listen_socket(const uint16_t port) {
         return -1;
     }
 
-    if (listen(fd, 16) < 0) {
+    if (listen(fd, 16) < 0) { /* backlog de 16 conexiuni in asteptare */
         (void)close(fd);
         return -1;
     }
@@ -45,6 +48,8 @@ int create_listen_socket(const uint16_t port) {
     return fd;
 }
 
+/* Scrie exact size bytes in fd, retrying la EINTR.
+   Returneaza numarul de bytes scrisi sau -1 la eroare. */
 ssize_t write_all(const int fd, const void *buffer, const size_t size) {
     if (buffer == NULL) {
         errno = EINVAL;
@@ -73,6 +78,8 @@ ssize_t write_all(const int fd, const void *buffer, const size_t size) {
     return (ssize_t)total;
 }
 
+/* Citeste o linie terminata cu '\n' din fd, byte cu byte.
+   Buffer-ul va fi intotdeauna null-terminat. Returneaza numarul de bytes cititi. */
 ssize_t read_line(const int fd, char *buffer, const size_t buffer_size) {
     if (buffer == NULL || buffer_size == 0U) {
         errno = EINVAL;
@@ -108,6 +115,8 @@ ssize_t read_line(const int fd, char *buffer, const size_t buffer_size) {
     return (ssize_t)pos;
 }
 
+/* Citeste exact size bytes din fd.
+   Returneaza bytes cititi (poate fi < size la EOF) sau -1 la eroare. */
 ssize_t read_exact(const int fd, void *buffer, const size_t size) {
     if (buffer == NULL) {
         errno = EINVAL;
@@ -134,6 +143,7 @@ ssize_t read_exact(const int fd, void *buffer, const size_t size) {
     return (ssize_t)total;
 }
 
+/* Citeste si arunca exact size bytes din fd (util pentru skip date nedorite). */
 int discard_exact(const int fd, const size_t size) {
     char buf[4096];
     size_t remaining = size;

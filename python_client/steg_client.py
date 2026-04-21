@@ -18,11 +18,14 @@ STATUS_POLL_MAX_ITER = 120
 
 
 def connect(host: str, port: int) -> socket.socket:
+    """Creeaza o conexiune TCP la host:port cu timeout de 30 secunde."""
     sock = socket.create_connection((host, port), timeout=30.0)
     return sock
 
 
 def recv_line(sock: socket.socket) -> str:
+    """Citeste o linie terminata cu '\\n' din socket, byte cu byte.
+    Decodifica UTF-8 cu inlocuire in caz de caractere invalide."""
     data = bytearray()
     while True:
         ch = sock.recv(1)
@@ -35,8 +38,11 @@ def recv_line(sock: socket.socket) -> str:
 
 
 def recv_exact(sock: socket.socket, n: int) -> bytes:
+    """Citeste exact n bytes din socket, looping pana la completare.
+    Arunca ConnectionError daca peer-ul inchide conexiunea prematur."""
     buf = bytearray()
     while len(buf) < n:
+        # citim cel mult CHUNK_SIZE bytes sau cat mai e de citit
         chunk = sock.recv(min(CHUNK_SIZE, n - len(buf)))
         if not chunk:
             raise ConnectionError("peer closed while expecting %d bytes" % n)
@@ -45,6 +51,8 @@ def recv_exact(sock: socket.socket, n: int) -> bytes:
 
 
 def send_line(sock: socket.socket, line: str) -> None:
+    """Trimite o linie de comanda pe socket, adaugand '\\n' daca lipseste.
+    Afiseaza comanda trimisa cu prefix '>>'."""
     if not line.endswith("\n"):
         line = line + "\n"
     print(">> " + line, end="")
@@ -52,12 +60,15 @@ def send_line(sock: socket.socket, line: str) -> None:
 
 
 def expect_line(sock: socket.socket) -> str:
+    """Citeste o linie de raspuns de la server si o afiseaza cu prefix '<<'."""
     line = recv_line(sock)
     print("<< " + line, end="")
     return line
 
 
 def send_file(sock: socket.socket, path: str) -> int:
+    """Trimite continutul fisierului de la path pe socket in bucati de CHUNK_SIZE.
+    Returneaza dimensiunea fisierului in bytes."""
     size = os.path.getsize(path)
     with open(path, "rb") as fp:
         while True:
@@ -69,6 +80,7 @@ def send_file(sock: socket.socket, path: str) -> int:
 
 
 def parse_job_id(line: str) -> int:
+    """Extrage job_id din raspunsul 'JOB <id>'. Returneaza 0 daca formatul e invalid."""
     parts = line.strip().split()
     if len(parts) < 2 or parts[0] != "JOB":
         return 0
@@ -79,6 +91,7 @@ def parse_job_id(line: str) -> int:
 
 
 def parse_data_size(line: str) -> int:
+    """Extrage dimensiunea din raspunsul 'DATA <size>'. Returneaza -1 daca e invalid."""
     parts = line.strip().split()
     if len(parts) < 2 or parts[0] != "DATA":
         return -1
@@ -89,6 +102,8 @@ def parse_data_size(line: str) -> int:
 
 
 def wait_for_done(sock: socket.socket, job_id: int) -> bool:
+    """Polleaza starea jobului la fiecare STATUS_POLL_INTERVAL_S secunde.
+    Returneaza True daca jobul a terminat cu DONE, False la FAILED/CANCELED/timeout."""
     for _ in range(STATUS_POLL_MAX_ITER):
         send_line(sock, "STATUS %d" % job_id)
         resp = expect_line(sock)
@@ -97,10 +112,12 @@ def wait_for_done(sock: socket.socket, job_id: int) -> bool:
         if "FAILED" in resp or "CANCELED" in resp:
             return False
         time.sleep(STATUS_POLL_INTERVAL_S)
-    return False
+    return False  # timeout dupa STATUS_POLL_MAX_ITER iteratii
 
 
 def download_result(sock: socket.socket, job_id: int, out_path: str) -> bool:
+    """Trimite DOWNLOAD <job_id>, primeste 'DATA <size>' si salveaza datele in out_path.
+    Returneaza True la succes, False daca serverul refuza download-ul."""
     send_line(sock, "DOWNLOAD %d" % job_id)
     resp = expect_line(sock)
     size = parse_data_size(resp)
@@ -119,12 +136,14 @@ def download_result(sock: socket.socket, job_id: int, out_path: str) -> bool:
 
 
 def cmd_ping(sock: socket.socket) -> int:
+    """Trimite PING si asteapta PONG. Returneaza 0 la succes."""
     send_line(sock, "PING")
     expect_line(sock)
     return 0
 
 
 def cmd_capacity(sock: socket.socket, png_in: str) -> int:
+    """Trimite PNG-ul la server si afiseaza capacitatea LSB disponibila in bytes."""
     size = os.path.getsize(png_in)
     send_line(sock, "CAPACITY %d" % size)
     send_file(sock, png_in)
@@ -140,6 +159,7 @@ def cmd_capacity(sock: socket.socket, png_in: str) -> int:
 
 
 def cmd_validate(sock: socket.socket, png_in: str) -> int:
+    """Trimite PNG-ul la server si afiseaza metadatele (dimensiuni, bit depth, color type)."""
     size = os.path.getsize(png_in)
     send_line(sock, "VALIDATE %d" % size)
     send_file(sock, png_in)
@@ -155,11 +175,13 @@ def cmd_validate(sock: socket.socket, png_in: str) -> int:
 
 
 def cmd_encode_text(sock: socket.socket, png_in: str, text: str, out_png: str) -> int:
+    """Ascunde textul in PNG si salveaza PNG-ul rezultat la out_png.
+    Protocolul: ENCODE_TEXT <png_size> <text_size> -> PNG bytes -> text bytes -> JOB id."""
     png_size = os.path.getsize(png_in)
     text_bytes = text.encode("utf-8")
     send_line(sock, "ENCODE_TEXT %d %d" % (png_size, len(text_bytes)))
     send_file(sock, png_in)
-    sock.sendall(text_bytes)
+    sock.sendall(text_bytes)  # textul e trimis direct, fara fisier intermediar
     resp = expect_line(sock)
     job_id = parse_job_id(resp)
     if job_id == 0:
@@ -172,9 +194,11 @@ def cmd_encode_text(sock: socket.socket, png_in: str, text: str, out_png: str) -
 
 
 def cmd_encode_file(sock: socket.socket, png_in: str, file_in: str, out_png: str) -> int:
+    """Ascunde fisierul in PNG si salveaza rezultatul la out_png.
+    Protocolul: ENCODE_FILE <png_sz> <name_sz> <file_sz> -> PNG -> name -> file."""
     png_size = os.path.getsize(png_in)
     file_size = os.path.getsize(file_in)
-    name = os.path.basename(file_in)
+    name = os.path.basename(file_in)  # doar numele fisierului, fara cale
     name_bytes = name.encode("utf-8")
     send_line(sock, "ENCODE_FILE %d %d %d" % (png_size, len(name_bytes), file_size))
     send_file(sock, png_in)
@@ -190,6 +214,7 @@ def cmd_encode_file(sock: socket.socket, png_in: str, file_in: str, out_png: str
 
 
 def cmd_decode(sock: socket.socket, png_in: str, out_path: str) -> int:
+    """Extrage payload-ul ascuns din PNG si il salveaza la out_path."""
     size = os.path.getsize(png_in)
     send_line(sock, "DECODE %d" % size)
     send_file(sock, png_in)
@@ -205,6 +230,7 @@ def cmd_decode(sock: socket.socket, png_in: str, out_path: str) -> int:
 
 
 def main() -> int:
+    """Entry point: parseaza argumentele, se conecteaza la server si executa comanda aleasa."""
     parser = argparse.ArgumentParser(prog="steg_client.py")
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
@@ -228,7 +254,7 @@ def main() -> int:
 
     sock = connect(args.host, args.port)
     try:
-        banner = recv_line(sock)
+        banner = recv_line(sock)  # mesajul "OK connected" trimis de server la conectare
         print("<< " + banner, end="")
 
         if args.cmd == "ping":

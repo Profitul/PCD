@@ -15,16 +15,21 @@ static uint32_t g_crc32_table[256];
 static int g_crc32_table_ready = 0;
 static pthread_mutex_t g_crc32_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+/* Construieste lookup table-ul CRC32 folosind polinomul IEEE 802.3 (reflected). */
 static void crc32_build_table(void) {
     for (uint32_t i = 0U; i < 256U; i++) {
         uint32_t c = i;
         for (int k = 0; k < 8; k++) {
+            /* Daca bitul cel mai putin semnificativ e setat, XOR cu polinomul;
+               altfel shift dreapta (procesare bit cu bit, forma reflectata). */
             c = (c & 1U) ? (0xEDB88320U ^ (c >> 1)) : (c >> 1);
         }
         g_crc32_table[i] = c;
     }
 }
 
+/* Calculeaza CRC32 pentru un buffer de date.
+   Initializeaza lazy (o singura data, protejat de mutex) lookup table-ul. */
 static uint32_t stego_crc32(const uint8_t *data, size_t len) {
     (void)pthread_mutex_lock(&g_crc32_mutex);
     if (!g_crc32_table_ready) {
@@ -35,11 +40,13 @@ static uint32_t stego_crc32(const uint8_t *data, size_t len) {
 
     uint32_t c = 0xFFFFFFFFU;
     for (size_t i = 0U; i < len; i++) {
+        /* Combina byte-ul curent cu restul CRC si cauta in table */
         c = g_crc32_table[(c ^ data[i]) & 0xFFU] ^ (c >> 8);
     }
-    return c ^ 0xFFFFFFFFU;
+    return c ^ 0xFFFFFFFFU; /* inversare finala conform standardului CRC32 */
 }
 
+/* Scrie un uint32 in format big-endian la adresa dst. */
 static void write_be32(uint8_t *dst, uint32_t v) {
     dst[0] = (uint8_t)(v >> 24);
     dst[1] = (uint8_t)(v >> 16);
@@ -47,20 +54,24 @@ static void write_be32(uint8_t *dst, uint32_t v) {
     dst[3] = (uint8_t)v;
 }
 
+/* Citeste un uint32 din format big-endian de la adresa src. */
 static uint32_t read_be32(const uint8_t *src) {
     return ((uint32_t)src[0] << 24) | ((uint32_t)src[1] << 16) |
            ((uint32_t)src[2] << 8)  | (uint32_t)src[3];
 }
 
+/* Scrie un uint16 in format big-endian la adresa dst. */
 static void write_be16(uint8_t *dst, uint16_t v) {
     dst[0] = (uint8_t)(v >> 8);
     dst[1] = (uint8_t)v;
 }
 
+/* Citeste un uint16 din format big-endian de la adresa src. */
 static uint16_t read_be16(const uint8_t *src) {
     return (uint16_t)(((uint16_t)src[0] << 8) | (uint16_t)src[1]);
 }
 
+/* Returneaza un string descriptiv pentru un cod de eroare stego. */
 const char *stego_strerror(stego_status_t status) {
     switch (status) {
         case STEGO_OK:              return "ok";
@@ -78,6 +89,7 @@ const char *stego_strerror(stego_status_t status) {
     }
 }
 
+/* Elibereaza memoria alocata pentru randurile imaginii PNG. */
 static void png_image_buf_free(png_image_buf_t *img) {
     if (img == NULL) {
         return;
@@ -91,6 +103,9 @@ static void png_image_buf_free(png_image_buf_t *img) {
     }
 }
 
+/* Incarca o imagine PNG de la path si o normalizeaza la RGB sau RGBA 8bpp.
+   Toate transformarile (palette, grayscale, 16bpp strip, tRNS) sunt aplicate
+   astfel incat img->channels devine intotdeauna 3 sau 4. */
 static int png_load_rgb_or_rgba(const char *path, png_image_buf_t *img) {
     if (path == NULL || img == NULL) {
         return STEGO_ERR_ARG;
@@ -126,6 +141,7 @@ static int png_load_rgb_or_rgba(const char *path, png_image_buf_t *img) {
         return STEGO_ERR_MEMORY;
     }
 
+    /* setjmp/longjmp este mecanismul de error handling al libpng */
     if (setjmp(png_jmpbuf(png_ptr)) != 0) {
         png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
         png_image_buf_free(img);
@@ -134,7 +150,7 @@ static int png_load_rgb_or_rgba(const char *path, png_image_buf_t *img) {
     }
 
     png_init_io(png_ptr, fp);
-    png_set_sig_bytes(png_ptr, (int)sizeof(sig));
+    png_set_sig_bytes(png_ptr, (int)sizeof(sig)); /* anunta libpng ca am citit deja header-ul */
     png_read_info(png_ptr, info_ptr);
 
     png_uint_32 width  = png_get_image_width(png_ptr, info_ptr);
@@ -142,6 +158,7 @@ static int png_load_rgb_or_rgba(const char *path, png_image_buf_t *img) {
     int bit_depth = png_get_bit_depth(png_ptr, info_ptr);
     int color_type = png_get_color_type(png_ptr, info_ptr);
 
+    /* Normalizare format: convertim orice tip de PNG la RGB/RGBA 8bpp */
     if (color_type == PNG_COLOR_TYPE_PALETTE) {
         png_set_palette_to_rgb(png_ptr);
     }
@@ -149,10 +166,10 @@ static int png_load_rgb_or_rgba(const char *path, png_image_buf_t *img) {
         png_set_expand_gray_1_2_4_to_8(png_ptr);
     }
     if (png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS) != 0) {
-        png_set_tRNS_to_alpha(png_ptr);
+        png_set_tRNS_to_alpha(png_ptr); /* transparenta pseudo -> canal alpha real */
     }
     if (bit_depth == 16) {
-        png_set_strip_16(png_ptr);
+        png_set_strip_16(png_ptr); /* reducem la 8 bpp pentru simplitate */
     }
     if (color_type == PNG_COLOR_TYPE_GRAY || color_type == PNG_COLOR_TYPE_GRAY_ALPHA) {
         png_set_gray_to_rgb(png_ptr);
@@ -205,6 +222,7 @@ static int png_load_rgb_or_rgba(const char *path, png_image_buf_t *img) {
     return STEGO_OK;
 }
 
+/* Salveaza imaginea PNG (RGB sau RGBA) in fisier. In caz de eroare sterge fisierul partial. */
 static int png_save_rgb_or_rgba(const char *path, const png_image_buf_t *img) {
     if (path == NULL || img == NULL || img->rows == NULL) {
         return STEGO_ERR_ARG;
@@ -255,12 +273,16 @@ static int png_save_rgb_or_rgba(const char *path, const png_image_buf_t *img) {
     return STEGO_OK;
 }
 
+/* Returneaza numarul de biti disponibili pentru ascunderea datelor.
+   Canalul alpha (index 3 in RGBA) este exclus pentru a nu altera transparenta. */
 static size_t image_data_bit_capacity(const png_image_buf_t *img) {
     const size_t pixels = (size_t)img->width * (size_t)img->height;
-    const int data_channels = (img->channels == 4) ? 3 : img->channels;
+    const int data_channels = (img->channels == 4) ? 3 : img->channels; /* exclude alpha */
     return pixels * (size_t)data_channels;
 }
 
+/* Returneaza 1 daca channel-ul cu index ch_index este utilizabil pentru steganografie.
+   In RGBA, canalul 3 (alpha) nu este folosit. */
 static int is_data_channel(int channels, int ch_index) {
     if (channels == 4 && (ch_index % 4) == 3) {
         return 0;
@@ -268,6 +290,8 @@ static int is_data_channel(int channels, int ch_index) {
     return 1;
 }
 
+/* Embedeaza datele in LSB-urile pixelilor imaginii (Least Significant Bit steganography).
+   Fiecare bit din data este scris in bitul 0 al unui byte de pixel. */
 static void embed_bits(png_image_buf_t *img, const uint8_t *data, size_t len_bytes) {
     size_t bit_index = 0U;
     const size_t total_bits = len_bytes * 8U;
@@ -280,13 +304,17 @@ static void embed_bits(png_image_buf_t *img, const uint8_t *data, size_t len_byt
                 continue;
             }
             const size_t byte_pos = bit_index / 8U;
+            /* Extragem bitul corespunzator din data (LSB first) */
             const uint8_t bit = (uint8_t)((data[byte_pos] >> (bit_index % 8U)) & 1U);
+            /* Inlocuim LSB-ul pixelului cu bitul de date, pastrand restul neschimbat */
             row[x] = (png_byte)((row[x] & 0xFEU) | bit);
             bit_index++;
         }
     }
 }
 
+/* Extrage datele ascunse din LSB-urile pixelilor imaginii.
+   Inversa operatiei embed_bits. */
 static void extract_bits(const png_image_buf_t *img, uint8_t *data, size_t len_bytes) {
     (void)memset(data, 0, len_bytes);
     size_t bit_index = 0U;
@@ -299,13 +327,18 @@ static void extract_bits(const png_image_buf_t *img, uint8_t *data, size_t len_b
             if (!is_data_channel(img->channels, (int)x)) {
                 continue;
             }
+            /* Citim LSB-ul pixelului */
             const uint8_t bit = (uint8_t)(row[x] & 1U);
+            /* Plasam bitul la pozitia corecta in byte-ul de output */
             data[bit_index / 8U] |= (uint8_t)(bit << (bit_index % 8U));
             bit_index++;
         }
     }
 }
 
+/* Construieste buffer-ul complet ce va fi ascuns in imagine.
+   Format: [MAGIC 4B][type 1B][fn_len 2B][filename fn_len B][payload_len 4B][payload payload_len B][CRC32 4B]
+   Returneaza buffer-ul alocat (trebuie eliberat de apelant) sau NULL la eroare de memorie. */
 static uint8_t *build_container(stego_payload_type_t type,
                                 const char *filename,
                                 const uint8_t *payload,
@@ -319,6 +352,7 @@ static uint8_t *build_container(stego_payload_type_t type,
         }
     }
 
+    /* total = MAGIC(4) + type(1) + fn_len_field(2) + filename + payload_len_field(4) + payload + CRC(4) */
     const size_t total = 4U + 1U + 2U + fn_len + 4U + payload_len + 4U;
     uint8_t *buf = (uint8_t *)malloc(total);
     if (buf == NULL) {
@@ -350,6 +384,8 @@ static uint8_t *build_container(stego_payload_type_t type,
     return buf;
 }
 
+/* Calculeaza capacitatea maxima de payload (in bytes) pentru o imagine PNG.
+   Umple structura out cu dimensiunile imaginii si numarul de bytes utilizabili. */
 int stego_get_capacity(const char *png_path, stego_capacity_t *out) {
     if (png_path == NULL || out == NULL) {
         return STEGO_ERR_ARG;
@@ -375,6 +411,8 @@ int stego_get_capacity(const char *png_path, stego_capacity_t *out) {
     return STEGO_OK;
 }
 
+/* Logica comuna pentru encode text si encode file:
+   incarca PNG, construieste containerul, verifica capacitatea si embedeaza. */
 static int encode_common(const char *input_png_path,
                          const char *output_png_path,
                          stego_payload_type_t type,
@@ -414,6 +452,7 @@ static int encode_common(const char *input_png_path,
     return rc;
 }
 
+/* Ascunde un text in imaginea PNG de la input_png_path si salveaza rezultatul la output_png_path. */
 int stego_encode_text(const char *input_png_path,
                       const char *output_png_path,
                       const char *text,
@@ -426,6 +465,8 @@ int stego_encode_text(const char *input_png_path,
                          (const uint8_t *)text, text_len);
 }
 
+/* Citeste fisierul de la payload_file_path si il ascunde in imaginea PNG.
+   store_as_filename este numele salvat in container; daca e NULL, se foloseste basename-ul. */
 int stego_encode_file(const char *input_png_path,
                       const char *output_png_path,
                       const char *payload_file_path,
@@ -468,6 +509,7 @@ int stego_encode_file(const char *input_png_path,
 
     const char *fn = store_as_filename;
     if (fn == NULL) {
+        /* Extrage doar numele fisierului din cale (fara directoare) */
         const char *slash = strrchr(payload_file_path, '/');
         fn = (slash != NULL) ? slash + 1 : payload_file_path;
     }
@@ -478,6 +520,8 @@ int stego_encode_file(const char *input_png_path,
     return rc;
 }
 
+/* Extrage payload-ul ascuns dintr-o imagine PNG.
+   Aloca out->data (eliberat cu stego_extracted_free), valideaza magic, tip si CRC32. */
 int stego_decode(const char *png_path, stego_extracted_t *out) {
     if (png_path == NULL || out == NULL) {
         return STEGO_ERR_ARG;
@@ -497,6 +541,7 @@ int stego_decode(const char *png_path, stego_extracted_t *out) {
         return STEGO_ERR_MAGIC;
     }
 
+    /* Citim primii 7 bytes: MAGIC(4) + type(1) + fn_len(2) */
     uint8_t header[7];
     extract_bits(&img, header, sizeof(header));
 
@@ -543,6 +588,7 @@ int stego_decode(const char *png_path, stego_extracted_t *out) {
     extract_bits(&img, buf, container_len);
     png_image_buf_free(&img);
 
+    /* Verifica integritatea: CRC32 storat in ultimii 4 bytes vs cel calculat */
     const uint32_t stored_crc = read_be32(buf + container_len - 4U);
     const uint32_t calc_crc = stego_crc32(buf, container_len - 4U);
     if (stored_crc != calc_crc) {
@@ -576,6 +622,7 @@ int stego_decode(const char *png_path, stego_extracted_t *out) {
     return rc;
 }
 
+/* Elibereaza memoria alocata de stego_decode pentru datele extrase. */
 void stego_extracted_free(stego_extracted_t *e) {
     if (e == NULL) {
         return;

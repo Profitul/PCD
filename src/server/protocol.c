@@ -1,6 +1,7 @@
 #include "config.h"
 #include "protocol.h"
 
+/* Elimina caracterul '\n' de la sfarsitul string-ului daca exista. */
 static void trim_newline(char *text) {
     if (text == NULL) {
         return;
@@ -12,11 +13,14 @@ static void trim_newline(char *text) {
     }
 }
 
+/* Verifica daca s incepe cu prefix. Returneaza lungimea prefix-ului sau 0 daca nu se potriveste. */
 static int starts_with(const char *s, const char *prefix) {
     const size_t n = strlen(prefix);
     return strncmp(s, prefix, n) == 0 ? (int)n : 0;
 }
 
+/* Parseaza un uint64 din stringul s. Seteaza *end la primul caracter neconsumit.
+   Returneaza 0 la succes, -1 daca parsing-ul esueaza sau valoarea e invalida. */
 static int parse_u64(const char *s, uint64_t *out, const char **end) {
     if (s == NULL || out == NULL) {
         return -1;
@@ -34,12 +38,16 @@ static int parse_u64(const char *s, uint64_t *out, const char **end) {
     return 0;
 }
 
+/* Avanseaza pointerul *p peste spatii si taburi. */
 static void skip_ws(const char **p) {
     while (**p == ' ' || **p == '\t') {
         (*p)++;
     }
 }
 
+/* Parseaza o linie de comanda text in structura protocol_request_t.
+   Comenzile cu argumente numerice (ENCODE_TEXT, ENCODE_FILE etc.) folosesc parse_u64
+   pentru a citi dimensiunile corespunzatoare. */
 int protocol_parse_line(const char *line, protocol_request_t *request) {
     if (line == NULL || request == NULL) {
         return -1;

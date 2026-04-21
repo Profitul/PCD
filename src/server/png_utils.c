@@ -1,5 +1,7 @@
 #include "png_utils.h"
 
+/* Verifica daca primii 8 bytes ai fisierului corespund signaturii PNG.
+   Returneaza 1 (valid), 0 (invalid), -1 (eroare I/O). */
 int is_png_signature_valid(const char *path) {
     if (path == NULL) {
         errno = EINVAL;
@@ -22,6 +24,8 @@ int is_png_signature_valid(const char *path) {
     return (png_sig_cmp(sig, 0, (int)sizeof(sig)) == 0) ? 1 : 0;
 }
 
+/* Citeste metadatele unui PNG (dimensiuni, bit_depth, color_type, channels)
+   fara a decoda pixelii imaginii. */
 int png_read_metadata(const char *path, png_metadata_t *metadata) {
     if (path == NULL || metadata == NULL) {
         errno = EINVAL;
@@ -83,6 +87,8 @@ int png_read_metadata(const char *path, png_metadata_t *metadata) {
     return 0;
 }
 
+/* Calculeaza capacitatea LSB in bytes dintr-un set de metadate PNG.
+   Suporta doar imagini cu bit_depth == 8; rezerva 16 bytes pentru overhead. */
 int png_calculate_lsb_capacity_bytes(const png_metadata_t *metadata, size_t *capacity_bytes) {
     if (metadata == NULL || capacity_bytes == NULL) {
         errno = EINVAL;
@@ -109,6 +115,7 @@ int png_calculate_lsb_capacity_bytes(const png_metadata_t *metadata, size_t *cap
     return 0;
 }
 
+/* Wrapper: citeste metadatele din fisier si calculeaza capacitatea LSB in un singur apel. */
 int analyze_png_capacity_simple(const char *path, size_t *capacity_bytes) {
     if (path == NULL || capacity_bytes == NULL) {
         errno = EINVAL;
@@ -123,6 +130,7 @@ int analyze_png_capacity_simple(const char *path, size_t *capacity_bytes) {
     return png_calculate_lsb_capacity_bytes(&metadata, capacity_bytes);
 }
 
+/* Converteste constanta color_type din libpng in string lizibil. */
 const char *png_color_type_to_string(const int color_type) {
     switch (color_type) {
         case PNG_COLOR_TYPE_GRAY:

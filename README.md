@@ -107,4 +107,3 @@ Toti 4 colaboreaza pe: Makefile, `include/common.h` si `config.h`, SRS/SDD, prez
 - **Nivel A**: poll + thread pool + coada FIFO + transfer fisiere mari + logging + admin separat + 2 tipuri clienti.
 - **Nivel B**: ID unic job, STATUS asincron, pipe anonim, cancel, kick, blocklist IP.
 - **Extra M1**: libconfig + getopt_long + env vars + uname() + fork()/wait()+exec() in admin.
-  

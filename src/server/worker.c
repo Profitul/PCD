@@ -5,6 +5,8 @@
 #include "storage.h"
 #include "worker.h"
 
+/* Scrie un worker_event atomic pe pipe-ul de notificare catre server.
+   Loopul asigura scrierea completa chiar daca write() returneaza partial. */
 static int write_event(const int fd, const worker_event_t *event) {
     if (event == NULL) {
         return -1;
@@ -23,6 +25,7 @@ static int write_event(const int fd, const worker_event_t *event) {
     return 0;
 }
 
+/* Scrie un buffer de text in fisier binar (fara null terminator). */
 static int write_text_to_file(const char *path, const char *text, size_t len) {
     FILE *fp = fopen(path, "wb");
     if (fp == NULL) return -1;
@@ -34,6 +37,7 @@ static int write_text_to_file(const char *path, const char *text, size_t len) {
     return 0;
 }
 
+/* Scrie date binare in fisier. */
 static int write_bin_to_file(const char *path, const uint8_t *data, size_t len) {
     FILE *fp = fopen(path, "wb");
     if (fp == NULL) return -1;
@@ -45,6 +49,7 @@ static int write_bin_to_file(const char *path, const uint8_t *data, size_t len) 
     return 0;
 }
 
+/* Citeste continutul unui fisier text in buf (null-terminat). Seteaza *out_len la bytes cititi. */
 static int read_text_file(const char *path, char *buf, size_t buf_size, size_t *out_len) {
     FILE *fp = fopen(path, "rb");
     if (fp == NULL) return -1;
@@ -55,6 +60,8 @@ static int read_text_file(const char *path, char *buf, size_t buf_size, size_t *
     return 0;
 }
 
+/* Proceseaza un job de tip TEXT (demo): simuleaza 5 pasi de lucru cu 100ms delay fiecare,
+   cu suport pentru anulare intre pasi. */
 static int process_text_job(worker_context_t *ctx, job_t *job) {
     char payload[MAX_JOB_PAYLOAD];
     job_get_payload(job, payload, sizeof(payload));
@@ -83,6 +90,7 @@ static int process_text_job(worker_context_t *ctx, job_t *job) {
     return 0;
 }
 
+/* Valideaza ca fisierul PNG de la input_path este un PNG valid si extrage metadatele. */
 static int process_validate_image_job(worker_context_t *ctx, job_t *job) {
     char input_path[MAX_JOB_PATH];
     job_get_input_path(job, input_path, sizeof(input_path));
@@ -106,6 +114,7 @@ static int process_validate_image_job(worker_context_t *ctx, job_t *job) {
     return 0;
 }
 
+/* Calculeaza capacitatea maxima de payload LSB a imaginii PNG si o returneaza ca rezultat. */
 static int process_analyze_capacity_job(worker_context_t *ctx, job_t *job) {
     char input_path[MAX_JOB_PATH];
     job_get_input_path(job, input_path, sizeof(input_path));
@@ -131,6 +140,7 @@ static int process_analyze_capacity_job(worker_context_t *ctx, job_t *job) {
     return 0;
 }
 
+/* Citeste textul din fisierul temporar si il ascunde in PNG prin steganografie LSB. */
 static int process_encode_text_job(worker_context_t *ctx, job_t *job) {
     char png_path[MAX_JOB_PATH];
     char text_path[MAX_JOB_PATH];
@@ -185,6 +195,7 @@ static int process_encode_text_job(worker_context_t *ctx, job_t *job) {
     return 0;
 }
 
+/* Citeste fisierul payload si il ascunde in PNG impreuna cu numele sau original. */
 static int process_encode_file_job(worker_context_t *ctx, job_t *job) {
     char png_path[MAX_JOB_PATH];
     char file_path[MAX_JOB_PATH];
@@ -234,6 +245,7 @@ static int process_encode_file_job(worker_context_t *ctx, job_t *job) {
     return 0;
 }
 
+/* Extrage payload-ul ascuns din PNG si il salveaza ca fisier .txt sau .bin in functie de tip. */
 static int process_decode_job(worker_context_t *ctx, job_t *job) {
     char png_path[MAX_JOB_PATH];
     job_get_input_path(job, png_path, sizeof(png_path));
@@ -297,6 +309,8 @@ static int process_decode_job(worker_context_t *ctx, job_t *job) {
     return 0;
 }
 
+/* Thread principal al worker-ului: preia joburi din coada si le proceseaza in bucla.
+   La sfarsit trimite un eveniment pe pipe-ul de notificare catre server. */
 void *worker_main(void *arg) {
     worker_context_t *ctx = (worker_context_t *)arg;
     if (ctx == NULL) {
@@ -338,6 +352,7 @@ void *worker_main(void *arg) {
                 break;
         }
 
+        /* Daca procesorul a returnat eroare fara sa seteze starea, marcam FAILED */
         if (rc < 0 && job_get_state(job) == JOB_STATE_RUNNING) {
             job_set_result(job, "worker failed");
             job_set_state(job, JOB_STATE_FAILED);
