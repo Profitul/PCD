@@ -1,6 +1,6 @@
 # StegaPNG - Server-Client de steganografie in imagini PNG
 
-Proiect PCD (Programarea Concurenta si Distributiva), echipa 4 membri.
+Proiect PCD (Programarea Concurenta si Distribuita), echipa 4 membri.
 Target: Nivel A + B
 
 ## Structura
