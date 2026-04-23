@@ -3,7 +3,7 @@
 
 Versiune: 1.0
 Data: aprilie 2026
-Materia: Programarea Calculatoarelor si Distribuite (PCD), UVT
+Materia: Programare Concurenta si Distribuita (PCD), UVT
 Echipa: 4 membri
 
 ---
