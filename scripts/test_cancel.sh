@@ -1,55 +1,63 @@
 #!/usr/bin/env bash
-# Cancel end-to-end: folosesc SUBMIT (job TEXT, ~2.5s cu cancel checks la 100ms).
-# 3 workeri, submit 9 joburi; joburile 4..9 stau QUEUED; cancel pe 7/8/9 inca QUEUED.
-set -u
+# Test extins CANCEL: porneste server cu 1 worker, submit multe joburi TEXT, anuleaza ultimele cat sunt in coada.
+set -euo pipefail
+
 ROOT="$(cd "$(dirname "$0")"/.. && pwd)"
-cd "$ROOT"
+source "$ROOT/scripts/demo_lib.sh"
 
-: > logs/server.log
-./server > /dev/null 2>&1 &
-SPID=$!
-sleep 2
-trap "kill $SPID 2>/dev/null || true; wait 2>/dev/null || true" EXIT
+OUT_DIR="storage/test_cancel"
+SERVER_LOG="logs/test_cancel_server.log"
+mkdir -p "$OUT_DIR"
+install_demo_trap
 
-echo '[1] Submit 9 joburi TEXT via python socket'
-python3 - <<'PY'
-import socket, threading
-def submit(i):
-    s = socket.create_connection(('127.0.0.1', 9090))
-    s.recv(128)
-    s.sendall(f"SUBMIT msg_{i}\n".encode())
-    resp = s.recv(128).decode()
-    print(f"  client {i}: {resp.strip()}")
-    try:
-        for _ in range(60):
-            s.sendall(b"STATUS 0\n")
-            s.recv(128)
-    except Exception:
-        pass
+start_server "$SERVER_LOG" --workers 1
+
+section "Submit 10 joburi TEXT prin socket raw"
+IDS_FILE="$OUT_DIR/job_ids.txt"
+python3 - "$USER_PORT" "$IDS_FILE" <<'PY'
+import re, socket, sys
+port = int(sys.argv[1])
+out = sys.argv[2]
+ids = []
+for i in range(1, 11):
+    s = socket.create_connection(("127.0.0.1", port), timeout=5)
+    s.recv(256)
+    s.sendall(f"SUBMIT cancel_demo_{i}\n".encode())
+    resp = s.recv(256).decode(errors="replace")
+    print(resp.strip())
+    m = re.search(r"JOB\s+(\d+)", resp)
+    if m:
+        ids.append(m.group(1))
     s.close()
-ts = []
-for i in range(1, 10):
-    t = threading.Thread(target=submit, args=(i,))
-    t.daemon = True
-    t.start()
-    ts.append(t)
-import time
-time.sleep(0.5)
-print("=== all submitted ===")
+open(out, "w").write("\n".join(ids) + "\n")
+print("ids=", ids)
 PY
+cat "$IDS_FILE"
 
-echo '[2] CANCEL 7, 8, 9 (inca QUEUED)'
-printf '6\n7\n6\n8\n6\n9\n0\n' | ./admin_client 2>&1 | grep -E 'OK cancel|ERR cannot|ERR job' | head -10
+mapfile -t IDS < "$IDS_FILE"
+if (( ${#IDS[@]} < 10 )); then
+    echo "[FAIL] Nu s-au creat 10 joburi" >&2
+    exit 1
+fi
+CANCEL_A="${IDS[7]}"
+CANCEL_B="${IDS[8]}"
+CANCEL_C="${IDS[9]}"
 
-sleep 4
+section "CANCEL pe joburile $CANCEL_A $CANCEL_B $CANCEL_C"
+printf '6\n%s\n6\n%s\n6\n%s\n0\n' "$CANCEL_A" "$CANCEL_B" "$CANCEL_C" | admin_menu | grep -E 'OK cancel|ERR|BYE' | tail -20
 
-echo '[3] Log: Cancel by admin'
-grep -E 'Cancel by admin' logs/server.log | tail -5
+section "Astept finalizarea si verific HISTORY"
+sleep 6
+HIST="$OUT_DIR/history.txt"
+printf '3\n0\n' | admin_menu > "$HIST" 2>&1
+cat "$HIST" | grep -E 'HISTORY|CANCELED|DONE|FAILED|BYE' | tail -40
+if grep -q 'CANCELED' "$HIST" || grep -q 'state=CANCELED' "$SERVER_LOG"; then
+    echo "[OK] exista joburi CANCELED"
+else
+    echo "[FAIL] Nu apare CANCELED in history/log" >&2
+    exit 1
+fi
 
-echo '[4] Log: state=CANCELED'
-grep -E 'state=CANCELED' logs/server.log | tail -5
-
-echo '[5] HISTORY'
-printf '3\n0\n' | ./admin_client 2>&1 | grep -oE 'id=[0-9]+,state=[A-Z]+' | sort -u
-
-echo '=== TEST CANCEL DONE ==='
+section "Log cancel relevant"
+grep -E 'Cancel by admin|state=CANCELED|Event job_id' "$SERVER_LOG" | tail -30 || true
+section "TEST CANCEL EXTINS DONE"

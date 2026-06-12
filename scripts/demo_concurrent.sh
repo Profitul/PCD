@@ -1,54 +1,71 @@
 #!/usr/bin/env bash
-# Demo 2: 4 clienti paraleli (2 C + 2 Python) demonstrand coada FIFO + worker pool.
+# Demo 2 extins: clienti paraleli C + Python + UNIX, coada, worker pool, verificare rezultate.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")"/.. && pwd)"
-cd "$ROOT"
+source "$ROOT/scripts/demo_lib.sh"
 
-COVER="${COVER:-poza/IMG_0003.png}"
 OUT_DIR="storage/demo_concurrent"
+SERVER_LOG="logs/server_demo_concurrent.log"
 mkdir -p "$OUT_DIR"
+install_demo_trap
 
-echo "========== [1] Server pornire =========="
-./server > logs/server_demo_concurrent.log 2>&1 &
-SPID=$!
-sleep 2
-trap "kill $SPID 2>/dev/null || true; wait 2>/dev/null || true" EXIT
+start_server "$SERVER_LOG"
 
-echo "========== [2] Lansare 4 clienti paraleli =========="
-./client encode-text "$COVER" "job A din C" "$OUT_DIR/a.png" > "$OUT_DIR/a.log" 2>&1 &
-PIDS="$!"
-./client encode-text "$COVER" "job B din C" "$OUT_DIR/b.png" > "$OUT_DIR/b.log" 2>&1 &
-PIDS="$PIDS $!"
-python3 python_client/steg_client.py encode-text "$COVER" "job C din Python" "$OUT_DIR/c.png" > "$OUT_DIR/c.log" 2>&1 &
-PIDS="$PIDS $!"
-python3 python_client/steg_client.py encode-text "$COVER" "job D din Python" "$OUT_DIR/d.png" > "$OUT_DIR/d.log" 2>&1 &
-PIDS="$PIDS $!"
+section "Lansez 6 joburi paralele: C, Python INET si Python UNIX"
+declare -a PIDS=()
+run_job() {
+    local mode="$1" name="$2" msg="$3"
+    local out_png="$OUT_DIR/$name.png"
+    local log="$OUT_DIR/$name.log"
+    case "$mode" in
+        c)    user_client encode-text "$COVER" "$msg" "$out_png" > "$log" 2>&1 ;;
+        py)   py_client encode-text "$COVER" "$msg" "$out_png" > "$log" 2>&1 ;;
+        unix) py_unix_client encode-text "$COVER" "$msg" "$out_png" > "$log" 2>&1 ;;
+        *) echo "bad mode" >&2; exit 2 ;;
+    esac
+}
 
-echo "PIDs: $PIDS"
-for p in $PIDS; do wait $p; done
+run_job c    a "job A din client C" & PIDS+=("$!")
+run_job c    b "job B din client C" & PIDS+=("$!")
+run_job py   c "job C din Python INET" & PIDS+=("$!")
+run_job py   d "job D din Python INET" & PIDS+=("$!")
+run_job unix e "job E din Python UNIX" & PIDS+=("$!")
+run_job unix f "job F din Python UNIX" & PIDS+=("$!")
 
-echo "========== [3] Verificare 4 rezultate =========="
-for name in a b c d; do
-    if [ -s "$OUT_DIR/$name.png" ]; then
-        echo "[OK] $name.png ($(stat -c%s "$OUT_DIR/$name.png") bytes)"
-    else
-        echo "[FAIL] $name.png lipseste"; exit 1
-    fi
+echo "PIDs: ${PIDS[*]}"
+for pid in "${PIDS[@]}"; do
+    wait "$pid"
 done
 
-echo "========== [4] Decode fiecare si verificare =========="
-EXPECTED=("job A din C" "job B din C" "job C din Python" "job D din Python")
-i=0
-for name in a b c d; do
-    ./client decode "$OUT_DIR/$name.png" "$OUT_DIR/$name.txt" > /dev/null 2>&1
-    GOT="$(cat "$OUT_DIR/$name.txt")"
-    if [ "$GOT" = "${EXPECTED[$i]}" ]; then
-        echo "[OK] $name: $GOT"
-    else
-        echo "[FAIL] $name: $GOT != ${EXPECTED[$i]}"; exit 1
-    fi
-    i=$((i + 1))
+section "Verific fisiere PNG produse"
+for name in a b c d e f; do
+    assert_file_nonempty "$OUT_DIR/$name.png"
 done
 
-echo "========== DEMO CONCURRENT DONE =========="
+section "Decode + verificare continut pentru toate joburile"
+declare -A EXPECTED=(
+    [a]="job A din client C"
+    [b]="job B din client C"
+    [c]="job C din Python INET"
+    [d]="job D din Python INET"
+    [e]="job E din Python UNIX"
+    [f]="job F din Python UNIX"
+)
+for name in a b c d e f; do
+    py_client decode "$OUT_DIR/$name.png" "$OUT_DIR/$name.txt" > "$OUT_DIR/$name.decode.log" 2>&1
+    got="$(cat "$OUT_DIR/$name.txt")"
+    if [[ "$got" != "${EXPECTED[$name]}" ]]; then
+        echo "[FAIL] $name: '$got' != '${EXPECTED[$name]}'" >&2
+        exit 1
+    fi
+    echo "[OK] $name: $got"
+done
+
+section "Admin STATS + LISTJOBS + HISTORY"
+printf '1\n2\n3\n0\n' | admin_menu | grep -E 'STATS|JOBS|HISTORY|BYE' | tail -30
+
+section "Log worker/coada"
+grep -E 'Worker|Submitted job|Event job_id' "$SERVER_LOG" | tail -30 || true
+
+section "DEMO CONCURRENT EXTINS DONE"
