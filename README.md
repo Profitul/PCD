@@ -2,7 +2,8 @@
 
 Proiect PCD (Programarea Concurenta si Distributiva), echipa 4 membri.
 
-Target curent: Nivel A + Nivel B, plus extensii pentru punctaj maxim: socket UNIX/LOCAL, INotify, gateway REST si interfata admin ncurses.
+Target curent: Nivel A + Nivel B
+socket UNIX/LOCAL, INotify, gateway REST si interfata admin ncurses
 
 ---
 
