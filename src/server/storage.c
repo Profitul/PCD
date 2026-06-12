@@ -1,6 +1,69 @@
 #include "config.h"
+#include "job.h"
 #include "net.h"
 #include "storage.h"
+
+static char g_storage_root[MAX_JOB_PATH] = STORAGE_ROOT;
+static char g_storage_uploads[MAX_JOB_PATH] = STORAGE_UPLOADS;
+static char g_storage_results[MAX_JOB_PATH] = STORAGE_RESULTS;
+static char g_storage_temp[MAX_JOB_PATH] = STORAGE_TEMP;
+
+static int build_child_path(const char *root, const char *name, char *out, const size_t out_size) {
+    if (root == NULL || name == NULL || out == NULL || out_size == 0U) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    const int rc = snprintf(out, out_size, "%s/%s", root, name);
+    if (rc < 0 || (size_t)rc >= out_size) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    return 0;
+}
+
+/* Seteaza radacina de storage folosita de toate functiile storage_*.
+   Trebuie apelata inainte de storage_init_dirs(). */
+int storage_set_root(const char *root_path) {
+    if (root_path == NULL || root_path[0] == '\0') {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (snprintf(g_storage_root, sizeof(g_storage_root), "%s", root_path) < 0 ||
+        strlen(root_path) >= sizeof(g_storage_root)) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+
+    if (build_child_path(g_storage_root, "uploads", g_storage_uploads, sizeof(g_storage_uploads)) < 0) {
+        return -1;
+    }
+    if (build_child_path(g_storage_root, "results", g_storage_results, sizeof(g_storage_results)) < 0) {
+        return -1;
+    }
+    if (build_child_path(g_storage_root, "temp", g_storage_temp, sizeof(g_storage_temp)) < 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+const char *storage_root_dir(void) {
+    return g_storage_root;
+}
+
+const char *storage_uploads_dir(void) {
+    return g_storage_uploads;
+}
+
+const char *storage_results_dir(void) {
+    return g_storage_results;
+}
+
+const char *storage_temp_dir(void) {
+    return g_storage_temp;
+}
 
 /* Verifica daca directorul exista; il creeaza cu permisiunile 0755 daca nu. */
 int ensure_directory_exists(const char *path) {
@@ -43,44 +106,48 @@ int get_file_size_bytes(const char *path, off_t *size_out) {
 
 /* Creeaza ierarhia de directoare necesara (root, uploads, results, temp). */
 int storage_init_dirs(void) {
-    if (ensure_directory_exists(STORAGE_ROOT) < 0) {
+    if (ensure_directory_exists(g_storage_root) < 0) {
         return -1;
     }
-    if (ensure_directory_exists(STORAGE_UPLOADS) < 0) {
+    if (ensure_directory_exists(g_storage_uploads) < 0) {
         return -1;
     }
-    if (ensure_directory_exists(STORAGE_RESULTS) < 0) {
+    if (ensure_directory_exists(g_storage_results) < 0) {
         return -1;
     }
-    if (ensure_directory_exists(STORAGE_TEMP) < 0) {
+    if (ensure_directory_exists(g_storage_temp) < 0) {
         return -1;
     }
     return 0;
 }
 
-/* Construieste calea pentru un fisier de upload: uploads/job_<id>.<suffix>. */
+/* Construieste calea pentru un fisier de upload: <root>/uploads/job_<id>.<suffix>. */
 int storage_make_upload_path(const uint64_t job_id, const char *suffix, char *out, const size_t out_size) {
     if (out == NULL || out_size == 0U) {
+        errno = EINVAL;
         return -1;
     }
     const char *s = (suffix != NULL) ? suffix : "bin";
     const int rc = snprintf(out, out_size, "%s/job_%llu.%s",
-                            STORAGE_UPLOADS, (unsigned long long)job_id, s);
+                            g_storage_uploads, (unsigned long long)job_id, s);
     if (rc < 0 || (size_t)rc >= out_size) {
+        errno = ENAMETOOLONG;
         return -1;
     }
     return 0;
 }
 
-/* Construieste calea pentru un fisier rezultat: results/job_<id>.<suffix>. */
+/* Construieste calea pentru un fisier rezultat: <root>/results/job_<id>.<suffix>. */
 int storage_make_result_path(const uint64_t job_id, const char *suffix, char *out, const size_t out_size) {
     if (out == NULL || out_size == 0U) {
+        errno = EINVAL;
         return -1;
     }
     const char *s = (suffix != NULL) ? suffix : "bin";
     const int rc = snprintf(out, out_size, "%s/job_%llu.%s",
-                            STORAGE_RESULTS, (unsigned long long)job_id, s);
+                            g_storage_results, (unsigned long long)job_id, s);
     if (rc < 0 || (size_t)rc >= out_size) {
+        errno = ENAMETOOLONG;
         return -1;
     }
     return 0;
@@ -90,6 +157,7 @@ int storage_make_result_path(const uint64_t job_id, const char *suffix, char *ou
    In caz de eroare sterge fisierul partial creat. */
 int storage_receive_to_file(const int fd, const size_t size, const char *dst_path) {
     if (dst_path == NULL) {
+        errno = EINVAL;
         return -1;
     }
 
@@ -134,6 +202,7 @@ int storage_receive_to_file(const int fd, const size_t size, const char *dst_pat
 /* Trimite continutul fisierului de la src_path pe socket-ul fd in bucati de CHUNK_SIZE. */
 int storage_send_file(const int fd, const char *src_path) {
     if (src_path == NULL) {
+        errno = EINVAL;
         return -1;
     }
 
@@ -167,6 +236,7 @@ int storage_send_file(const int fd, const char *src_path) {
 /* Citeste tot continutul unui fisier in buffer (null-terminat). Seteaza *out_len la bytes cititi. */
 int storage_read_all(const char *path, char *buffer, const size_t buffer_size, size_t *out_len) {
     if (path == NULL || buffer == NULL || buffer_size == 0U) {
+        errno = EINVAL;
         return -1;
     }
 
@@ -204,9 +274,8 @@ int copy_file_to_storage(const char *src_path, char *dst_path, const size_t dst_
         return -1;
     }
 
-    /* Unicitate garantata prin combinatia sec + nsec din timestamp */
     const int rc = snprintf(dst_path, dst_path_size, "%s/%ld_%ld_%s",
-                            STORAGE_UPLOADS, (long)ts.tv_sec, (long)ts.tv_nsec, base);
+                            g_storage_uploads, (long)ts.tv_sec, (long)ts.tv_nsec, base);
     if (rc < 0 || (size_t)rc >= dst_path_size) {
         errno = ENAMETOOLONG;
         return -1;
@@ -242,8 +311,12 @@ int copy_file_to_storage(const char *src_path, char *dst_path, const size_t dst_
         }
     }
 
-    if (fclose(src) != 0) result = -1;
-    if (fclose(dst) != 0) result = -1;
+    if (fclose(src) != 0) {
+        result = -1;
+    }
+    if (fclose(dst) != 0) {
+        result = -1;
+    }
 
     if (result < 0) {
         (void)unlink(dst_path);

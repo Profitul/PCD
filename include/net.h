@@ -4,6 +4,7 @@
 #include "common.h"
 
 int create_listen_socket(uint16_t port);
+int create_unix_listen_socket(const char *path);
 int set_nonblocking(int fd);
 ssize_t read_line(int fd, char *buffer, size_t buffer_size);
 ssize_t write_all(int fd, const void *buffer, size_t size);

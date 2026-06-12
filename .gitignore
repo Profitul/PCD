@@ -1,44 +1,35 @@
-# Binare
-/server
-/client
-/admin_client
-/stego_test
-
-# Obiecte + dependente
+# Build outputs
+server
+client
+admin_client
+stego_test
 *.o
-*.d
 *.a
 *.so
+*.out
 
-# Runtime generat
-/storage/uploads/*
-/storage/results/*
-/storage/temp/*
-/storage/demo/
-/storage/demo_concurrent/
-/storage/demo_admin/
-!/storage/.gitkeep
-/logs/*.log
+# Runtime folders/files
+logs/*.log
+storage/uploads/*
+storage/results/*
+storage/temp/*
+storage/demo/
+storage/demo_admin/
+storage/demo_concurrent/
+storage_runtime_test/
+*.tar.gz
+*.zip
 
-# Outputs de demo in root
-/out_*.png
-/out_*.txt
-/out_*.bin
-/py_*.png
-/py_*.txt
-/py_*.bin
+# Python
+__pycache__/
+*.pyc
+python_client/__pycache__/
 
-# Editor/IDE
+# OS/editor
+.DS_Store
 .vscode/
 .idea/
-*.swp
 *~
 
-# Sisteme de build secundare
-build/
-compile_commands.json
-.cache/
-
-# Core dumps
-core
-core.*
+# Temporary sockets
+*.sock

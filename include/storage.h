@@ -7,6 +7,12 @@ int ensure_directory_exists(const char *path);
 int copy_file_to_storage(const char *src_path, char *dst_path, size_t dst_path_size);
 int get_file_size_bytes(const char *path, off_t *size_out);
 
+int storage_set_root(const char *root_path);
+const char *storage_root_dir(void);
+const char *storage_uploads_dir(void);
+const char *storage_results_dir(void);
+const char *storage_temp_dir(void);
+
 int storage_init_dirs(void);
 int storage_make_upload_path(uint64_t job_id, const char *suffix, char *out, size_t out_size);
 int storage_make_result_path(uint64_t job_id, const char *suffix, char *out, size_t out_size);

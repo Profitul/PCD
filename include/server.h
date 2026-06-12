@@ -28,8 +28,13 @@ typedef struct blocklist {
 typedef struct server_state {
     int listen_fd_user;
     int listen_fd_admin;
+    int listen_fd_unix;
     int pipe_read_fd;
     int pipe_write_fd;
+    int inotify_fd;
+    int inotify_wd_uploads;
+    int inotify_wd_results;
+    int inotify_wd_temp;
     volatile sig_atomic_t running;
     job_queue_t queue;
     job_table_t jobs;

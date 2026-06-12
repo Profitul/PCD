@@ -9,18 +9,59 @@ import os
 import socket
 import sys
 import time
+from typing import Optional
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 9090
+DEFAULT_UNIX_SOCKET = "/tmp/stegapng_user.sock"
 CHUNK_SIZE = 65536
 STATUS_POLL_INTERVAL_S = 0.25
 STATUS_POLL_MAX_ITER = 120
+USER_COMMANDS = {"ping", "capacity", "validate", "encode-text", "encode-file", "decode"}
 
 
-def connect(host: str, port: int) -> socket.socket:
-    """Creeaza o conexiune TCP la host:port cu timeout de 30 secunde."""
+def normalize_argv_for_optional_unix_socket(argv: list[str]) -> list[str]:
+    """Permite si forma scurta: --unix-socket ping.
+
+    argparse cu nargs=? ar interpreta 'ping' ca path, nu ca subcomanda.
+    Rescriem manual doar cazul in care urmatorul token este o subcomanda.
+    """
+    out: list[str] = []
+    i = 0
+    while i < len(argv):
+        current = argv[i]
+        if current == "--unix-socket" and (i + 1 == len(argv) or argv[i + 1] in USER_COMMANDS):
+            out.append("--unix-socket=" + DEFAULT_UNIX_SOCKET)
+            i += 1
+            continue
+        out.append(current)
+        i += 1
+    return out
+
+
+def connect_tcp(host: str, port: int) -> socket.socket:
+    """Creeaza o conexiune TCP/INET la host:port cu timeout de 30 secunde."""
     sock = socket.create_connection((host, port), timeout=30.0)
     return sock
+
+
+def connect_unix(path: str) -> socket.socket:
+    """Creeaza o conexiune UNIX/LOCAL/FILE la socket-ul indicat de path."""
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.settimeout(30.0)
+    try:
+        sock.connect(path)
+    except OSError:
+        sock.close()
+        raise
+    return sock
+
+
+def connect(host: str, port: int, unix_socket: Optional[str] = None) -> socket.socket:
+    """Alege transportul: UNIX socket daca unix_socket este setat, altfel TCP/INET."""
+    if unix_socket is not None:
+        return connect_unix(unix_socket)
+    return connect_tcp(host, port)
 
 
 def recv_line(sock: socket.socket) -> str:
@@ -234,6 +275,20 @@ def main() -> int:
     parser = argparse.ArgumentParser(prog="steg_client.py")
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument(
+        "--unix-socket",
+        default=None,
+        metavar="PATH",
+        help=(
+            "foloseste socket UNIX/LOCAL/FILE. Pentru path-ul implicit poti scrie "
+            "--unix-socket ping sau --unix-socket=%s ping" % DEFAULT_UNIX_SOCKET
+        ),
+    )
+    parser.add_argument(
+        "--unix",
+        action="store_true",
+        help="scurtatura pentru --unix-socket=%s" % DEFAULT_UNIX_SOCKET,
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("ping")
@@ -250,9 +305,13 @@ def main() -> int:
     p = sub.add_parser("decode")
     p.add_argument("png_in"); p.add_argument("out_path")
 
-    args = parser.parse_args()
+    args = parser.parse_args(normalize_argv_for_optional_unix_socket(sys.argv[1:]))
 
-    sock = connect(args.host, args.port)
+    unix_socket = args.unix_socket
+    if args.unix and unix_socket is None:
+        unix_socket = DEFAULT_UNIX_SOCKET
+
+    sock = connect(args.host, args.port, unix_socket)
     try:
         banner = recv_line(sock)  # mesajul "OK connected" trimis de server la conectare
         print("<< " + banner, end="")

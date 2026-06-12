@@ -26,4 +26,8 @@
 #define DEFAULT_CONFIG_PATH "config/server.conf"
 #define CHUNK_SIZE 65536
 
+#define UNIX_SOCKET_PATH "/tmp/stegapng_user.sock"
+#define INOTIFY_EVENT_BUFFER_SIZE 4096
+#define INOTIFY_WATCH_MASK (IN_CREATE | IN_CLOSE_WRITE | IN_MODIFY | IN_DELETE | IN_MOVED_FROM | IN_MOVED_TO | IN_ATTRIB)
+
 #endif

@@ -1,3 +1,4 @@
+#include "config.h"
 #include "logger.h"
 
 static FILE *g_log_file = NULL;
@@ -17,9 +18,75 @@ static const char *level_to_string(const log_level_t level) {
     }
 }
 
-/* Deschide fisierul de log in modul append. Daca path e NULL, logul merge la stderr. */
+/* Creeaza directorul daca lipseste. Accepta doar componente normale de path. */
+static int ensure_dir(const char *path) {
+    if (path == NULL || path[0] == '\0') {
+        errno = EINVAL;
+        return -1;
+    }
+
+    struct stat st;
+    if (stat(path, &st) == 0) {
+        if (S_ISDIR(st.st_mode)) {
+            return 0;
+        }
+        errno = ENOTDIR;
+        return -1;
+    }
+
+    if (mkdir(path, 0755) < 0 && errno != EEXIST) {
+        return -1;
+    }
+
+    return 0;
+}
+
+/* Creeaza directoarele parinte pentru fisierul de log, ex. logs/server.log -> logs/. */
+static int ensure_parent_dirs_for_file(const char *path) {
+    if (path == NULL || path[0] == '\0') {
+        errno = EINVAL;
+        return -1;
+    }
+
+    char temp[BUFFER_SIZE];
+    const int rc = snprintf(temp, sizeof(temp), "%s", path);
+    if (rc < 0 || (size_t)rc >= sizeof(temp)) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+
+    char *last_slash = strrchr(temp, '/');
+    if (last_slash == NULL) {
+        return 0;
+    }
+
+    if (last_slash == temp) {
+        return 0;
+    }
+
+    *last_slash = '\0';
+
+    for (char *p = temp + 1; *p != '\0'; p++) {
+        if (*p == '/') {
+            *p = '\0';
+            if (ensure_dir(temp) < 0) {
+                return -1;
+            }
+            *p = '/';
+        }
+    }
+
+    return ensure_dir(temp);
+}
+
+/* Deschide fisierul de log in modul append. Creeaza automat directorul logs/ daca lipseste. */
 int logger_init(const char *path) {
     if (path == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (ensure_parent_dirs_for_file(path) < 0) {
         return -1;
     }
 
@@ -36,7 +103,7 @@ void logger_close(void) {
     (void)pthread_mutex_lock(&g_log_mutex);
 
     if (g_log_file != NULL) {
-        fclose(g_log_file);
+        (void)fclose(g_log_file);
         g_log_file = NULL;
     }
 
@@ -51,7 +118,7 @@ void logger_log(const log_level_t level, const char *fmt, ...) {
 
     (void)pthread_mutex_lock(&g_log_mutex);
 
-    FILE *out = (g_log_file != NULL) ? g_log_file : stderr; /* fallback la stderr daca fisierul nu e deschis */
+    FILE *out = (g_log_file != NULL) ? g_log_file : stderr;
 
     time_t now = time(NULL);
     struct tm tm_now;

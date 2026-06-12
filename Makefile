@@ -48,7 +48,7 @@ ifeq ($(HAS_LIBCONFIG),1)
     ANALYZE_FLAGS += -DHAVE_LIBCONFIG $(shell pkg-config --cflags libconfig)
 endif
 
-.PHONY: all clean run-server run-client run-admin test analyze check-deps
+.PHONY: all clean prepare-runtime run-server run-client run-admin run-py-client run-py-unix run-rest test analyze check-deps
 
 all: check-deps $(SERVER_BIN) $(CLIENT_BIN) $(ADMIN_BIN)
 
@@ -56,6 +56,9 @@ check-deps:
 	@command -v gcc >/dev/null || (echo "ERROR: gcc missing" && exit 1)
 	@pkg-config --exists libpng || (echo "ERROR: libpng-dev missing" && exit 1)
 	@echo "deps: libpng OK; libconfig=$(HAS_LIBCONFIG)"
+
+prepare-runtime:
+	mkdir -p logs storage/uploads storage/results storage/temp
 
 $(SERVER_BIN): $(SERVER_SRCS)
 	$(CC) $(CFLAGS) $(SERVER_SRCS) -o $(SERVER_BIN) $(LDFLAGS)
@@ -72,14 +75,23 @@ $(STEGO_TEST_BIN): $(STEGO_TEST_SRCS)
 test: $(STEGO_TEST_BIN)
 	./$(STEGO_TEST_BIN)
 
-run-server: $(SERVER_BIN)
+run-server: $(SERVER_BIN) prepare-runtime
 	./$(SERVER_BIN)
 
 run-client: $(CLIENT_BIN)
-	./$(CLIENT_BIN)
+	./$(CLIENT_BIN) ping
 
 run-admin: $(ADMIN_BIN)
 	./$(ADMIN_BIN)
+
+run-py-client:
+	python3 python_client/steg_client.py ping
+
+run-py-unix:
+	python3 python_client/steg_client.py --unix ping
+
+run-rest:
+	python3 rest_gateway.py --listen 127.0.0.1 --http-port 8080 --stega-host 127.0.0.1 --stega-port 9090
 
 analyze:
 	@rc=0; for f in $(ANALYZE_SRCS); do \

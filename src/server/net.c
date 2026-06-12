@@ -1,7 +1,7 @@
 #include "config.h"
 #include "net.h"
 
-/* Seteaza file descriptor-ul fd in modul non-blocking folosind fcntl. */
+/* Seteaza file descriptor-ul fd in modul non-blocking folosind fcntl(). */
 int set_nonblocking(const int fd) {
     const int flags = fcntl(fd, F_GETFL);
     if (flags < 0) {
@@ -15,8 +15,8 @@ int set_nonblocking(const int fd) {
     return 0;
 }
 
-/* Creeaza un socket TCP de ascultare pe portul dat.
-   Seteaza SO_REUSEADDR pentru a evita "address already in use" la restart rapid. */
+/* Creeaza un socket TCP/INET de ascultare pe portul dat.
+   SO_REUSEADDR permite repornirea rapida a serverului fara eroarea "address already in use". */
 int create_listen_socket(const uint16_t port) {
     const int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) {
@@ -40,8 +40,52 @@ int create_listen_socket(const uint16_t port) {
         return -1;
     }
 
-    if (listen(fd, 16) < 0) { /* backlog de 16 conexiuni in asteptare */
+    if (listen(fd, MAX_CLIENTS) < 0) {
         (void)close(fd);
+        return -1;
+    }
+
+    return fd;
+}
+
+/* Creeaza un socket UNIX/LOCAL/FILE de ascultare.
+   Protocolul folosit peste acest socket este acelasi protocol text ca pentru clientii INET.
+   unlink(path) sterge un socket ramas de la o rulare anterioara a serverului. */
+int create_unix_listen_socket(const char *path) {
+    if (path == NULL || path[0] == '\0') {
+        errno = EINVAL;
+        return -1;
+    }
+
+    const int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) {
+        return -1;
+    }
+
+    struct sockaddr_un addr;
+    (void)memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+
+    const int written = snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", path);
+    if (written < 0 || (size_t)written >= sizeof(addr.sun_path)) {
+        (void)close(fd);
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+
+    if (unlink(path) < 0 && errno != ENOENT) {
+        (void)close(fd);
+        return -1;
+    }
+
+    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        (void)close(fd);
+        return -1;
+    }
+
+    if (listen(fd, MAX_CLIENTS) < 0) {
+        (void)close(fd);
+        (void)unlink(path);
         return -1;
     }
 
@@ -79,7 +123,7 @@ ssize_t write_all(const int fd, const void *buffer, const size_t size) {
 }
 
 /* Citeste o linie terminata cu '\n' din fd, byte cu byte.
-   Buffer-ul va fi intotdeauna null-terminat. Returneaza numarul de bytes cititi. */
+   Buffer-ul este mereu null-terminat. */
 ssize_t read_line(const int fd, char *buffer, const size_t buffer_size) {
     if (buffer == NULL || buffer_size == 0U) {
         errno = EINVAL;
@@ -90,7 +134,7 @@ ssize_t read_line(const int fd, char *buffer, const size_t buffer_size) {
 
     while (pos + 1U < buffer_size) {
         char ch = '\0';
-        const ssize_t rc = read(fd, &ch, 1U);
+        const ssize_t rc = read(fd, &ch, sizeof(ch));
 
         if (rc < 0) {
             if (errno == EINTR) {
@@ -116,7 +160,7 @@ ssize_t read_line(const int fd, char *buffer, const size_t buffer_size) {
 }
 
 /* Citeste exact size bytes din fd.
-   Returneaza bytes cititi (poate fi < size la EOF) sau -1 la eroare. */
+   Returneaza bytes cititi; poate fi mai mic decat size doar daca apare EOF. */
 ssize_t read_exact(const int fd, void *buffer, const size_t size) {
     if (buffer == NULL) {
         errno = EINVAL;
@@ -134,32 +178,40 @@ ssize_t read_exact(const int fd, void *buffer, const size_t size) {
             }
             return -1;
         }
+
         if (rc == 0) {
             return (ssize_t)total;
         }
+
         total += (size_t)rc;
     }
 
     return (ssize_t)total;
 }
 
-/* Citeste si arunca exact size bytes din fd (util pentru skip date nedorite). */
+/* Citeste si arunca exact size bytes din fd.
+   Este folosit cand serverul refuza o cerere, dar trebuie sa curete datele deja trimise. */
 int discard_exact(const int fd, const size_t size) {
-    char buf[4096];
+    char buf[CHUNK_SIZE];
     size_t remaining = size;
+
     while (remaining > 0U) {
         const size_t want = (remaining < sizeof(buf)) ? remaining : sizeof(buf);
         const ssize_t rc = read(fd, buf, want);
+
         if (rc < 0) {
             if (errno == EINTR) {
                 continue;
             }
             return -1;
         }
+
         if (rc == 0) {
             return -1;
         }
+
         remaining -= (size_t)rc;
     }
+
     return 0;
 }

@@ -12,6 +12,7 @@ typedef struct runtime_config {
     char log_path[CFG_PATH_MAX];
     char storage_root[CFG_PATH_MAX];
     char config_file[CFG_PATH_MAX];
+    char unix_socket_path[CFG_PATH_MAX];
     uint64_t max_upload_bytes;
 } runtime_config_t;
 
